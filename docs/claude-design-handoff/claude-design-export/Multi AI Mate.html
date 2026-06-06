@@ -1,0 +1,1163 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi AI Mate</title>
+<style>
+/* ============================================================
+   Multi AI Mate — Mac desktop multi-AI workbench (prototype)
+   Single-file CSS + vanilla JS. No real WebViews / login / inject.
+   ============================================================ */
+
+:root{
+  /* type */
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+        "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+
+  /* radii */
+  --r-window: 12px;
+  --r-panel: 11px;
+  --r-control: 8px;
+  --r-tile: 13px;
+
+  /* timing */
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+/* ---------- LIGHT (default) ---------- */
+:root[data-theme="light"]{
+  --wall-1:#9fb8b1; --wall-2:#d8ccb6; --wall-3:#86aeb2; --wall-4:#c3cdd1;
+  --ink:#1f2327;
+  --ink-soft:#3b4046;
+  --muted:#6c7177;
+  --faint:#9aa0a6;
+
+  --glass-bar:rgba(244,243,240,.66);
+  --glass-side:rgba(236,235,230,.5);
+  --glass-track:rgba(206,206,200,.5);
+
+  --panel:rgba(252,251,249,.66);          /* main panel chrome */
+  --panel-soft:rgba(248,247,244,.5);      /* secondary panel chrome */
+  --content:rgba(255,255,255,.9);         /* reading surface — kept opaque-ish */
+  --content-line:rgba(31,35,40,.05);
+
+  --line:rgba(30,35,40,.10);
+  --line-2:rgba(30,35,40,.16);
+  --hair-hi:rgba(255,255,255,.72);
+
+  --tile:rgba(255,255,255,.62);
+  --tile-hi:rgba(255,255,255,.85);
+
+  --accent:#1d6f67;
+  --accent-ink:#155650;
+  --accent-soft:rgba(29,111,103,.16);
+  --accent-glow:rgba(29,111,103,.28);
+
+  --bubble-user:rgba(31,35,40,.055);
+  --bubble-ai:transparent;
+  --skeleton:rgba(31,35,40,.085);
+
+  --shadow-panel:0 1px 0 rgba(255,255,255,.7) inset, 0 10px 30px rgba(28,32,36,.10);
+  --shadow-panel-2:0 1px 0 rgba(255,255,255,.55) inset, 0 6px 18px rgba(28,32,36,.07);
+  --shadow-pop:0 18px 50px rgba(24,28,32,.22);
+}
+
+/* ---------- DARK ---------- */
+:root[data-theme="dark"]{
+  --wall-1:#15282a; --wall-2:#1e2d31; --wall-3:#0f2125; --wall-4:#27211a;
+  --ink:#e9ebec;
+  --ink-soft:#c5c9cc;
+  --muted:#9298a0;
+  --faint:#6b727a;
+
+  --glass-bar:rgba(38,41,45,.6);
+  --glass-side:rgba(32,35,39,.52);
+  --glass-track:rgba(20,22,25,.55);
+
+  --panel:rgba(40,43,47,.55);
+  --panel-soft:rgba(36,39,43,.45);
+  --content:rgba(26,28,31,.92);
+  --content-line:rgba(255,255,255,.045);
+
+  --line:rgba(255,255,255,.09);
+  --line-2:rgba(255,255,255,.15);
+  --hair-hi:rgba(255,255,255,.10);
+
+  --tile:rgba(60,64,69,.5);
+  --tile-hi:rgba(80,85,91,.6);
+
+  --accent:#3fb8a8;
+  --accent-ink:#5fd0c0;
+  --accent-soft:rgba(63,184,168,.18);
+  --accent-glow:rgba(63,184,168,.32);
+
+  --bubble-user:rgba(255,255,255,.06);
+  --bubble-ai:transparent;
+  --skeleton:rgba(255,255,255,.1);
+
+  --shadow-panel:0 1px 0 rgba(255,255,255,.06) inset, 0 14px 36px rgba(0,0,0,.4);
+  --shadow-panel-2:0 1px 0 rgba(255,255,255,.04) inset, 0 8px 20px rgba(0,0,0,.32);
+  --shadow-pop:0 22px 60px rgba(0,0,0,.55);
+}
+
+*{box-sizing:border-box}
+
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:var(--ui);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow:hidden;
+  /* the desktop wallpaper that the vibrancy reads against */
+  background:
+    radial-gradient(115% 95% at 12% 4%, var(--wall-3), transparent 50%),
+    radial-gradient(105% 85% at 92% 98%, var(--wall-4), transparent 48%),
+    radial-gradient(80% 70% at 78% 12%, var(--wall-2), transparent 55%),
+    linear-gradient(155deg, var(--wall-1), var(--wall-2) 60%, var(--wall-3));
+}
+/* very faint film grain so flat fills don't look digital */
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  opacity:.16; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+
+/* =========================================================
+   WINDOW SHELL
+   ========================================================= */
+.app{
+  position:relative; z-index:1;
+  height:100vh; min-height:680px;
+  display:grid;
+  grid-template-columns:64px 1fr;
+  grid-template-rows:44px 1fr 78px;
+}
+
+/* ---------- TITLEBAR (vibrancy) ---------- */
+.titlebar{
+  grid-column:1/3;
+  display:grid;
+  grid-template-columns:64px 1fr auto;
+  align-items:center;
+  -webkit-app-region:drag;
+  background:var(--glass-bar);
+  backdrop-filter:blur(30px) saturate(1.6);
+  -webkit-backdrop-filter:blur(30px) saturate(1.6);
+  border-bottom:1px solid var(--line);
+  box-shadow:inset 0 1px 0 var(--hair-hi);
+  z-index:6;
+}
+.traffic{display:flex; gap:8px; padding-left:16px; -webkit-app-region:no-drag}
+.tl{width:12px; height:12px; border-radius:50%; position:relative;
+  box-shadow:inset 0 0 0 .5px rgba(0,0,0,.18)}
+.tl.c{background:#ff5f57}
+.tl.m{background:#febc2e}
+.tl.x{background:#28c840}
+.tl b{position:absolute; inset:0; display:grid; place-items:center;
+  font-size:8px; line-height:1; color:rgba(0,0,0,.5); opacity:0; font-weight:900}
+.traffic:hover .tl b{opacity:1}
+
+.title-mid{
+  display:flex; align-items:center; gap:9px; min-width:0; padding-left:2px;
+}
+.brand-mark{
+  width:22px; height:22px; border-radius:6px; flex:0 0 auto;
+  object-fit:cover; display:block;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(0,0,0,.3);
+}
+.title-mid h1{margin:0; font-size:13px; font-weight:650; letter-spacing:-.01em}
+.title-mid .sub{font-size:11px; color:var(--muted); margin-left:2px}
+.title-mid .dot-sep{color:var(--faint); font-size:11px}
+
+.title-right{display:flex; align-items:center; gap:10px; padding-right:14px; -webkit-app-region:no-drag}
+
+/* segmented mode control */
+.modes{
+  position:relative; display:flex; align-items:center; gap:0;
+  padding:3px; border-radius:9px;
+  background:var(--glass-track);
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.05);
+}
+.modes .thumb{
+  position:absolute; top:3px; left:3px; height:calc(100% - 6px);
+  border-radius:7px; background:var(--content);
+  box-shadow:0 1px 3px rgba(0,0,0,.18), inset 0 1px 0 var(--hair-hi);
+  transition:transform .26s var(--ease), width .26s var(--ease);
+  z-index:0;
+}
+:root[data-theme="dark"] .modes .thumb{background:rgba(86,92,99,.9)}
+.mode-btn{
+  position:relative; z-index:1;
+  height:26px; min-width:52px; padding:0 12px; border:0; background:transparent;
+  font-size:12px; font-weight:600; letter-spacing:-.01em; color:var(--muted);
+  border-radius:7px; transition:color .2s var(--ease);
+  display:flex; align-items:center; justify-content:center; gap:5px;
+}
+.mode-btn .n{font-variant-numeric:tabular-nums}
+.mode-btn[aria-pressed="true"]{color:var(--ink)}
+.mode-btn:not([aria-pressed="true"]):hover{color:var(--ink-soft)}
+
+.appearance{
+  width:30px; height:28px; border-radius:8px; border:1px solid var(--line);
+  background:var(--tile); color:var(--ink-soft);
+  display:grid; place-items:center;
+  box-shadow:inset 0 1px 0 var(--hair-hi);
+  transition:background .2s, transform .1s;
+}
+.appearance:hover{background:var(--tile-hi)}
+.appearance:active{transform:scale(.94)}
+.appearance svg{width:15px; height:15px; display:block}
+
+/* =========================================================
+   DOCK (AI library)
+   ========================================================= */
+.dock{
+  grid-row:2/4;
+  background:var(--glass-side);
+  backdrop-filter:blur(34px) saturate(1.5);
+  -webkit-backdrop-filter:blur(34px) saturate(1.5);
+  border-right:1px solid var(--line);
+  box-shadow:inset -1px 0 0 var(--hair-hi);
+  padding:12px 0 14px;
+  display:flex; flex-direction:column; align-items:center; gap:9px;
+  z-index:3;
+}
+.dock .lib-label{
+  font-size:9px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); margin-bottom:1px;
+}
+.dock-scroll{display:flex; flex-direction:column; align-items:center; gap:9px;
+  overflow-y:auto; overflow-x:hidden; padding:1px 0; width:100%; flex:1 1 auto}
+.dock-scroll::-webkit-scrollbar{width:0}
+
+.tile{
+  position:relative; width:38px; height:38px; flex:0 0 auto;
+  border-radius:var(--r-tile);
+  background:var(--tile);
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 var(--tile-hi), 0 4px 10px rgba(20,24,28,.10);
+  display:grid; place-items:center;
+  cursor:grab; user-select:none;
+  font-weight:800; font-size:11.5px; letter-spacing:-.03em;
+  color:var(--g, var(--ink));
+  transition:transform .16s var(--ease), box-shadow .2s, border-color .2s;
+}
+.tile .glyph{position:relative; z-index:1; line-height:1}
+.tile.cjk .glyph{font-size:15px; letter-spacing:0}
+.tile.solo .glyph{font-size:20px; font-weight:800; letter-spacing:0}
+.tile.solo.cjk .glyph{font-size:19px}
+/* image-icon tiles (the icon supplies its own face) */
+.tile.img{background:transparent; overflow:hidden}
+.tile.img::before{display:none}
+.tile .glyph.ico{width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block;
+  transform:scale(1.14); user-select:none; -webkit-user-drag:none}
+/* soft per-app frosted tint */
+.tile::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; z-index:0;
+  background:var(--g, transparent); opacity:.1;
+}
+.tile:hover{
+  transform:translateY(-2px) scale(1.04);
+  border-color:color-mix(in oklab, var(--g, var(--ink)) 45%, var(--line));
+  box-shadow:inset 0 1px 0 var(--tile-hi),
+    0 8px 18px rgba(20,24,28,.16),
+    0 0 0 3px color-mix(in oklab, var(--g, var(--ink)) 16%, transparent);
+}
+.tile:active{cursor:grabbing; transform:scale(.97)}
+.tile.dragging{opacity:.35}
+.tile.custom{
+  color:var(--muted); border-style:dashed; font-size:18px; font-weight:500;
+  background:transparent; box-shadow:none;
+}
+.tile.custom::before{display:none}
+.tile.custom:hover{border-color:var(--ink-soft); color:var(--ink-soft)}
+/* add tile in trash / delete mode */
+.tile.custom.trash{border-style:solid; border-color:#d9534f; color:#d9534f;
+  background:rgba(217,83,79,.08)}
+.tile.custom.trash .glyph svg{width:19px; height:19px}
+.tile.custom.trash-over{transform:scale(1.12); border-color:#d9534f; color:#fff;
+  background:#d9534f; box-shadow:0 0 0 4px rgba(217,83,79,.22)}
+/* tooltip */
+.tile .tip{
+  position:absolute; left:calc(100% + 10px); top:50%; transform:translateY(-50%) scale(.92);
+  background:var(--ink); color:var(--content);
+  padding:4px 9px; border-radius:7px; font-size:11px; font-weight:600; white-space:nowrap;
+  letter-spacing:0; opacity:0; pointer-events:none; transition:opacity .14s, transform .14s;
+  box-shadow:var(--shadow-pop); z-index:20;
+}
+:root[data-theme="dark"] .tile .tip{background:#0c0d0f; color:#e9ebec}
+.tile .tip::before{content:""; position:absolute; right:100%; top:50%; transform:translateY(-50%);
+  border:5px solid transparent; border-right-color:var(--ink)}
+:root[data-theme="dark"] .tile .tip::before{border-right-color:#0c0d0f}
+.tile:hover .tip{opacity:1; transform:translateY(-50%) scale(1)}
+
+.dock-sep{width:24px; height:1px; background:var(--line); flex:0 0 auto; margin:2px 0}
+
+/* add-custom tile is a button */
+.tile.custom{padding:0; cursor:pointer}
+
+/* add custom AI dialog */
+.modal{position:fixed; inset:0; z-index:60; display:grid; place-items:center;
+  background:rgba(20,24,28,.26);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px)}
+.modal[hidden]{display:none}
+.modal-card{
+  width:340px; max-width:calc(100vw - 40px);
+  background:var(--glass-bar);
+  backdrop-filter:blur(40px) saturate(1.6); -webkit-backdrop-filter:blur(40px) saturate(1.6);
+  border:1px solid var(--line-2); border-radius:14px;
+  box-shadow:var(--shadow-pop), inset 0 1px 0 var(--hair-hi);
+  padding:18px; display:flex; flex-direction:column; gap:13px;
+  animation:popin .18s var(--ease)}
+@keyframes popin{from{opacity:0; transform:translateY(6px) scale(.98)}}
+.modal-head{display:flex; gap:12px; align-items:flex-start}
+.modal-icon{position:relative; width:44px; height:44px; flex:0 0 auto; border:0; padding:0;
+  border-radius:11px; display:grid; place-items:center; overflow:visible; cursor:pointer;
+  font-size:24px; font-weight:300; color:#fff; line-height:1;
+  background:linear-gradient(160deg,var(--accent),var(--accent-ink));
+  background-size:cover; background-position:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 2px 6px rgba(0,0,0,.14);
+  transition:transform .12s var(--ease), box-shadow .15s}
+.modal-icon:hover{transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 5px 14px rgba(0,0,0,.2)}
+.modal-icon:active{transform:scale(.96)}
+.modal-icon.has-img{background-image:none}
+.modal-icon .mi-glyph{position:relative; z-index:1}
+.modal-icon img.mi-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  border-radius:inherit; z-index:1}
+.modal-icon .mi-badge{position:absolute; right:-5px; bottom:-5px; z-index:2;
+  width:18px; height:18px; border-radius:50%; display:grid; place-items:center;
+  background:var(--ink); color:var(--content); border:2px solid var(--glass-bar);
+  box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.modal-icon .mi-badge svg{width:10px; height:10px}
+.modal-head h2{margin:0; font-size:15px; font-weight:650; letter-spacing:-.01em}
+.modal-head p{margin:3px 0 0; font-size:11.5px; color:var(--muted); line-height:1.45}
+.modal-field{display:flex; flex-direction:column; gap:5px; font-size:11px; font-weight:600; color:var(--muted)}
+.modal-field input{height:35px; border:1px solid var(--line); border-radius:9px; padding:0 11px;
+  background:var(--content); font-size:13px; color:var(--ink); outline:0;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.04); transition:border-color .15s, box-shadow .15s}
+.modal-field input::placeholder{color:var(--faint); font-weight:400}
+.modal-field input:focus{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:3px}
+.btn-ghost,.btn-accent{height:32px; padding:0 16px; border-radius:9px; font-size:12.5px;
+  font-weight:650; letter-spacing:-.01em; border:1px solid transparent; transition:background .15s}
+.btn-ghost{background:var(--tile); border-color:var(--line); color:var(--ink-soft)}
+.btn-ghost:hover{background:var(--tile-hi)}
+.btn-accent{background:var(--accent); color:#fff; box-shadow:0 4px 12px var(--accent-glow)}
+.btn-accent:hover{background:var(--accent-ink)}
+
+/* =========================================================
+   WORKSPACE + PANELS
+   ========================================================= */
+.workspace{
+  grid-column:2; grid-row:2;
+  padding:11px; display:grid; gap:11px; min-height:0;
+  transition:grid-template-columns .3s var(--ease);
+}
+.workspace.m1{grid-template-columns:1fr; grid-template-rows:1fr}
+.workspace.m2{grid-template-columns:1fr 1fr; grid-template-rows:1fr}
+.workspace.m3{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(280px,.78fr); grid-template-rows:1fr}
+.workspace.m4{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(280px,.78fr);
+  grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+
+.panel{
+  position:relative; min-width:0; min-height:0;
+  display:grid; grid-template-rows:40px 1fr;
+  border-radius:var(--r-panel); overflow:hidden;
+  background:var(--panel);
+  backdrop-filter:blur(24px) saturate(1.3);
+  -webkit-backdrop-filter:blur(24px) saturate(1.3);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-panel);
+  transition:box-shadow .2s, border-color .2s, transform .18s var(--ease);
+}
+.panel.hidden{display:none}
+/* secondary panels read lighter / quieter */
+.panel.aux{
+  background:var(--panel-soft);
+  box-shadow:var(--shadow-panel-2);
+}
+.panel.aux .panel-head{height:34px}
+.panel.aux .slot-badge{width:20px; height:20px; font-size:10px}
+.panel.aux .pv-name{font-size:12px}
+
+/* grid placement */
+.panel[data-slot="A"]{grid-column:1; grid-row:1/-1}
+.panel[data-slot="B"]{grid-column:2; grid-row:1/-1}
+.m3 .panel[data-slot="C"]{grid-column:3; grid-row:1/-1}
+.m4 .panel[data-slot="C"]{grid-column:3; grid-row:1}
+.m4 .panel[data-slot="D"]{grid-column:3; grid-row:2}
+
+/* drag target */
+.panel.drop{border-color:transparent;
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 7px var(--accent-soft), var(--shadow-panel);
+}
+.panel.drop .drop-veil{opacity:1}
+.drop-veil{
+  position:absolute; inset:0; z-index:5; pointer-events:none; opacity:0;
+  display:grid; place-items:center; transition:opacity .15s;
+  background:var(--accent-soft);
+  backdrop-filter:blur(2px);
+}
+.drop-veil .pill{
+  background:var(--accent); color:#fff; font-size:12px; font-weight:700;
+  padding:7px 14px; border-radius:999px; letter-spacing:-.01em;
+  box-shadow:0 6px 18px var(--accent-glow);
+}
+/* during any drag, dim panels gently so targets pop */
+.workspace.dragging .panel:not(.drop){opacity:.92}
+
+/* panel header */
+.panel-head{
+  display:flex; align-items:center; gap:9px; padding:0 10px 0 11px;
+  background:var(--glass-bar);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
+  border-bottom:1px solid var(--line);
+  box-shadow:inset 0 1px 0 var(--hair-hi);
+  min-width:0;
+}
+.slot-badge{
+  width:22px; height:22px; flex:0 0 auto; border-radius:6px;
+  display:grid; place-items:center; font-size:11px; font-weight:800; letter-spacing:0;
+  color:#fff; background:linear-gradient(160deg,#3a3f44,#1d2024);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18);
+}
+.slot-badge.glyph.cjk{font-size:11px}
+.slot-badge.img{
+  background:none; padding:0; overflow:hidden;
+  box-shadow:0 0 0 1px var(--line), 0 1px 2px rgba(0,0,0,.12);
+}
+.slot-badge.img img{width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block;
+  transform:scale(1.14)}
+.pv-name{display:flex; align-items:center; gap:7px; min-width:0; flex:1 1 auto}
+.pv-name .nm{font-size:13px; font-weight:600; letter-spacing:-.01em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.status{display:flex; align-items:center; gap:5px; flex:0 0 auto; color:var(--muted); font-size:11px}
+.status .led{width:6px; height:6px; border-radius:50%; background:var(--faint)}
+.status[data-s="ready"] .led{background:#34b27b; box-shadow:0 0 0 2px rgba(52,178,123,.18)}
+.status[data-s="loading"] .led{background:#e6a32e; box-shadow:0 0 0 2px rgba(230,163,46,.2);
+  animation:pulse 1s var(--ease) infinite}
+.status[data-s="empty"] .led{background:transparent; box-shadow:inset 0 0 0 1.5px var(--faint)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* hover-only icon affordances (no text buttons) */
+.head-actions{display:flex; align-items:center; gap:2px; flex:0 0 auto; opacity:0;
+  transition:opacity .15s}
+.panel-head:hover .head-actions{opacity:1}
+.icon-btn{width:24px; height:24px; border:0; background:transparent; border-radius:6px;
+  color:var(--muted); display:grid; place-items:center; transition:background .15s, color .15s}
+.icon-btn:hover{background:var(--bubble-user); color:var(--ink)}
+.icon-btn svg{width:14px; height:14px}
+
+/* panel content — the reading surface, kept clear */
+.panel-body{
+  position:relative; min-height:0; overflow:hidden;
+  background:
+    linear-gradient(var(--content),var(--content)),
+    repeating-linear-gradient(0deg,transparent 0 31px,var(--content-line) 31px 32px);
+  background-blend-mode:normal;
+}
+.web{position:absolute; inset:0; display:grid; grid-template-rows:auto 1fr; overflow:hidden}
+.web-bar{display:none; align-items:center; gap:8px; padding:8px 12px;
+  border-bottom:1px solid var(--line)}
+.web-bar .url{flex:1 1 auto; height:24px; border-radius:7px; background:var(--bubble-user);
+  display:flex; align-items:center; gap:7px; padding:0 10px; font-size:11px; color:var(--muted);
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.web-bar .lock{width:9px; height:9px; flex:0 0 auto; opacity:.5}
+.web-feed{overflow:auto; padding:16px 16px 20px}
+.web-feed::-webkit-scrollbar{width:8px}
+.web-feed::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px;
+  border:2px solid transparent; background-clip:padding-box}
+
+.msg{margin-bottom:16px}
+.msg .role{font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--faint); margin-bottom:6px}
+.msg.user .bubble{display:inline-block; background:var(--bubble-user); color:var(--ink);
+  padding:9px 13px; border-radius:12px 12px 12px 4px; font-size:13px; line-height:1.45; max-width:92%}
+.msg.ai .body{font-size:13px; line-height:1.55; color:var(--ink-soft)}
+.sk{display:grid; gap:8px}
+.sk i{height:9px; border-radius:99px; background:var(--skeleton); display:block}
+.sk i.s{width:42%} .sk i.m{width:70%} .sk i.l{width:90%} .sk i.xl{width:96%}
+.typing{display:inline-flex; gap:4px; align-items:center; color:var(--muted); font-size:12px}
+.typing .d{width:5px; height:5px; border-radius:50%; background:var(--muted);
+  animation:blink 1.2s infinite}
+.typing .d:nth-child(2){animation-delay:.2s} .typing .d:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,60%,100%{opacity:.25} 30%{opacity:1}}
+
+/* empty slot */
+.empty{position:absolute; inset:8px; border:1.5px dashed var(--line-2); border-radius:9px;
+  display:grid; place-items:center; text-align:center; padding:18px;
+  background:repeating-linear-gradient(135deg,transparent 0 9px,rgba(120,120,120,.03) 9px 18px)}
+.empty .ghost{font-size:64px; font-weight:800; color:var(--ink); opacity:.05; line-height:1;
+  margin-bottom:6px; letter-spacing:-.04em}
+.empty .et{font-size:13px; font-weight:650; color:var(--ink-soft)}
+.empty .es{font-size:11px; color:var(--muted); margin-top:3px}
+.empty .ec{margin-top:11px; display:inline-flex; align-items:center; gap:6px;
+  font-size:11px; color:var(--faint)}
+.empty .ec svg{width:14px; height:14px}
+
+/* =========================================================
+   COMPOSER (vibrancy)
+   ========================================================= */
+.composer{
+  grid-column:2; grid-row:3;
+  background:var(--glass-bar);
+  backdrop-filter:blur(30px) saturate(1.6);
+  -webkit-backdrop-filter:blur(30px) saturate(1.6);
+  border-top:1px solid var(--line);
+  box-shadow:inset 0 1px 0 var(--hair-hi);
+  display:flex; flex-direction:column; justify-content:center; gap:6px;
+  padding:9px 14px;
+}
+.target-row{display:flex; align-items:center; gap:8px; padding:0 2px; min-height:16px}
+.target-row .label{font-size:11px; color:var(--muted)}
+.target-chips{display:flex; gap:5px}
+.chip{display:inline-flex; align-items:center; gap:5px; height:18px; padding:0 7px 0 4px;
+  border-radius:99px; background:var(--bubble-user); font-size:10px; font-weight:700; color:var(--ink-soft)}
+.chip .b{width:13px; height:13px; border-radius:4px; display:grid; place-items:center;
+  font-size:8px; color:#fff; background:linear-gradient(160deg,#3a3f44,#1d2024)}
+.chip.none{background:transparent; color:var(--faint); font-weight:500; padding:0}
+
+.composer-row{display:flex; align-items:flex-end; gap:10px}
+.field{
+  flex:1 1 auto; min-width:0; display:flex; align-items:flex-end; gap:8px;
+  background:var(--content); border:1px solid var(--line);
+  border-radius:11px; padding:8px 8px 8px 14px;
+  box-shadow:inset 0 1px 0 var(--hair-hi), 0 4px 14px rgba(24,28,32,.06);
+  transition:border-color .18s, box-shadow .18s;
+}
+.field:focus-within{border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft), inset 0 1px 0 var(--hair-hi)}
+.field textarea{
+  flex:1 1 auto; min-width:0; resize:none; border:0; outline:0; background:transparent;
+  font-size:13.5px; line-height:1.5; max-height:120px; padding:2px 0; color:var(--ink);
+}
+.field textarea::placeholder{color:var(--faint)}
+.field .tools{display:flex; gap:2px; align-items:center; flex:0 0 auto; padding-bottom:1px}
+.field .tools .icon-btn{color:var(--faint)}
+.send{
+  flex:0 0 auto; height:38px; padding:0 18px; border:0; border-radius:10px;
+  background:var(--accent); color:#fff; font-size:13px; font-weight:700; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:8px;
+  box-shadow:0 4px 14px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.22);
+  transition:background .16s, transform .08s, opacity .16s;
+}
+.send:hover{background:var(--accent-ink)}
+.send:active{transform:scale(.97)}
+.send:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
+.send .kbd{font-size:10px; opacity:.7; font-weight:600}
+.send svg{width:14px; height:14px}
+
+/* refresh toast */
+.toast{
+  position:fixed; left:50%; bottom:96px; transform:translate(-50%,12px);
+  background:var(--ink); color:var(--content);
+  padding:9px 16px; border-radius:10px; font-size:12px; font-weight:600; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:9px; opacity:0; pointer-events:none;
+  box-shadow:var(--shadow-pop); z-index:50; transition:opacity .2s, transform .2s var(--ease);
+}
+:root[data-theme="dark"] .toast{background:#0c0d0f; color:#e9ebec}
+.toast.show{opacity:1; transform:translate(-50%,0)}
+.toast .spin{width:13px; height:13px; border-radius:50%;
+  border:2px solid rgba(255,255,255,.25); border-top-color:#fff; animation:spin .7s linear infinite}
+:root[data-theme="dark"] .toast .spin{border-color:rgba(255,255,255,.2); border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* responsive: collapse aux column under main panels */
+@media (max-width:1040px){
+  .workspace.m3, .workspace.m4{
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:minmax(0,1fr) minmax(200px,.62fr);
+  }
+  .m3 .panel[data-slot="C"]{grid-column:1/3; grid-row:2}
+  .m4 .panel[data-slot="C"]{grid-column:1; grid-row:2}
+  .m4 .panel[data-slot="D"]{grid-column:2; grid-row:2}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important; transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<main class="app">
+
+  <!-- ===================== TITLEBAR ===================== -->
+  <header class="titlebar">
+    <div class="traffic" aria-hidden="true">
+      <span class="tl c"><b>×</b></span>
+      <span class="tl m"><b>−</b></span>
+      <span class="tl x"><b>+</b></span>
+    </div>
+    <div class="title-mid">
+      <h1 style="margin: 2px">Multi AI Mate</h1>
+    </div>
+    <div class="title-right">
+      <nav class="modes" id="modes" aria-label="AI mode">
+        <span class="thumb" id="thumb"></span>
+        <button class="mode-btn" data-mode="1" aria-pressed="false"><span class="n">1</span> AI</button>
+        <button class="mode-btn" data-mode="2" aria-pressed="true"><span class="n">2</span> AI</button>
+        <button class="mode-btn" data-mode="3" aria-pressed="false"><span class="n">3</span> AI</button>
+        <button class="mode-btn" data-mode="4" aria-pressed="false"><span class="n">4</span> AI</button>
+      </nav>
+      <button class="appearance" id="appearance" title="Appearance" aria-label="Toggle appearance">
+        <svg viewBox="0 0 24 24" fill="none" id="apprIcon"></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== DOCK ===================== -->
+  <aside class="dock" aria-label="AI 库">
+    <div class="dock-scroll" id="dock"></div>
+  </aside>
+
+  <!-- ===================== WORKSPACE ===================== -->
+  <section class="workspace m2" id="workspace">
+    <article class="panel" data-slot="A"></article>
+    <article class="panel" data-slot="B"></article>
+    <article class="panel aux hidden" data-slot="C"></article>
+    <article class="panel aux hidden" data-slot="D"></article>
+  </section>
+
+  <!-- ===================== COMPOSER ===================== -->
+  <footer class="composer">
+    <div class="composer-row">
+      <div class="field">
+        <textarea id="input" rows="1" placeholder="给当前模式下所有已打开的 AI 发送同一条消息…">帮我分别从产品、写作和工程角度分析这个想法</textarea>
+        <div class="tools">
+          <button class="icon-btn" title="附件" aria-label="附件">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.5 8.5a1.6 1.6 0 01-2.3-2.3l7.8-7.8"/></svg>
+          </button>
+        </div>
+      </div>
+      <button class="send" id="send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        发送 <span class="kbd">⌘↵</span>
+      </button>
+    </div>
+  </footer>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- Add custom AI dialog -->
+<div class="modal" id="addModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="添加自定义 AI">
+    <div class="modal-head">
+      <button class="modal-icon" id="cIconBtn" type="button" title="选择图标（可选）" aria-label="选择图标">
+        <span class="mi-glyph" id="cIconGlyph">+</span>
+        <span class="mi-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+        </span>
+        <input id="cIconFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+      </button>
+      <div>
+        <h2>添加自定义 AI</h2>
+        <p>填入名称和网址；可选择图标，留空则用名称首字母。</p>
+      </div>
+    </div>
+    <label class="modal-field"><span>名称</span>
+      <input id="cName" type="text" placeholder="例如 Perplexity" maxlength="20" autocomplete="off"></label>
+    <label class="modal-field"><span>网址</span>
+      <input id="cUrl" type="text" placeholder="例如 perplexity.ai" autocomplete="off"></label>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cCancel" type="button">取消</button>
+      <button class="btn-accent" id="cAdd" type="button">添加</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   DATA
+   ========================================================= */
+const PROVIDERS = [
+  {id:"chatgpt", name:"ChatGPT",  glyph:"GPT", icon:"assets/chatgpt.png", iconSm:"assets/chatgpt-sm.png", url:"chatgpt.com",            hue:"oklch(.6 .07 162)"},
+  {id:"gemini",  name:"Gemini",   glyph:"Gem",  icon:"assets/gemini.png", iconSm:"assets/gemini-sm.png", url:"gemini.google.com",    hue:"oklch(.6 .08 256)"},
+  {id:"claude",  name:"Claude",   glyph:"Cla",  icon:"assets/claude.png", iconSm:"assets/claude-sm.png", url:"claude.ai",            hue:"oklch(.62 .085 52)"},
+  {id:"grok",    name:"Grok",     glyph:"Grok", icon:"assets/grok.png", iconSm:"assets/grok-sm.png", url:"grok.com",             hue:"oklch(.48 .02 270)"},
+  {id:"deepseek",name:"DeepSeek", glyph:"DS",   icon:"assets/deepseek.png", iconSm:"assets/deepseek-sm.png", url:"chat.deepseek.com",    hue:"oklch(.58 .08 268)"},
+  {id:"doubao",  name:"豆包",      glyph:"豆包", icon:"assets/doubao.png", iconSm:"assets/doubao-sm.png", url:"doubao.com",           hue:"oklch(.62 .075 248)", cjk:true},
+  {id:"kimi",    name:"Kimi",     glyph:"Kimi", icon:"assets/kimi.png", iconSm:"assets/kimi-sm.png", url:"kimi.com",             hue:"oklch(.56 .07 300)"},
+];
+const byId = Object.fromEntries(PROVIDERS.map(p=>[p.id,p]));
+
+/* panel state — empty slots keep their A/B/C/D identity forever */
+const SLOTS = {
+  A:{provider:"chatgpt", status:"ready"},
+  B:{provider:"claude",  status:"ready"},
+  C:{provider:"gemini",  status:"ready"},
+  D:{provider:null,      status:"empty"},
+};
+const ORDER = ["A","B","C","D"];
+let mode = 2;
+
+/* =========================================================
+   DOM refs
+   ========================================================= */
+const $ = s=>document.querySelector(s);
+const workspace = $("#workspace");
+const dock = $("#dock");
+const modes = $("#modes");
+const thumb = $("#thumb");
+const toast = $("#toast");
+const input = $("#input");
+
+/* =========================================================
+   DOCK render
+   ========================================================= */
+const isCustomId = id => /^custom-/.test(id);
+
+function morphAddTile(toTrash){
+  const add = document.getElementById("addTile");
+  if(!add) return;
+  add.classList.toggle("trash", toTrash);
+  const glyph = add.querySelector(".glyph");
+  glyph.innerHTML = toTrash
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M10 11v6M14 11v6"/></svg>`
+    : `+`;
+  add.querySelector(".tip").textContent = toTrash ? "拖到此处删除" : "添加自定义 AI";
+}
+
+function wireTileDrag(t, id){
+  t.addEventListener("dragstart", e=>{
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "copy";
+    t.classList.add("dragging");
+    workspace.classList.add("dragging");
+    morphAddTile(true);   // every icon is deletable → reveal trash
+  });
+  t.addEventListener("dragend", ()=>{
+    t.classList.remove("dragging");
+    workspace.classList.remove("dragging");
+    document.querySelectorAll(".panel.drop").forEach(p=>p.classList.remove("drop"));
+    morphAddTile(false);
+  });
+}
+
+function renderDock(){
+  dock.innerHTML = "";
+  PROVIDERS.forEach(p=>{
+    const t = document.createElement("div");
+    const solo = !p.icon && [...p.glyph].length === 1;   // single-char → larger glyph
+    t.className = "tile" + (p.cjk?" cjk":"") + (p.icon?" img":"") + (solo?" solo":"");
+    t.draggable = true;
+    t.dataset.provider = p.id;
+    t.style.setProperty("--g", p.hue);
+    const face = p.icon
+      ? `<img class="glyph ico" src="${p.icon}" alt="${p.name}" draggable="false">`
+      : `<span class="glyph">${p.glyph}</span>`;
+    const tip = p.name;
+    t.innerHTML = `${face}<span class="tip">${tip}</span>`;
+    wireTileDrag(t, p.id);
+    dock.appendChild(t);
+  });
+  // separator + add-custom tile (doubles as a trash target while dragging a custom AI)
+  const sep = document.createElement("div");
+  sep.className = "dock-sep";
+  dock.appendChild(sep);
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "tile custom";
+  add.id = "addTile";
+  add.innerHTML = `<span class="glyph">+</span><span class="tip">添加自定义 AI</span>`;
+  add.addEventListener("click", openAddDialog);
+  add.addEventListener("dragover", e=>{
+    if(!add.classList.contains("trash")) return;
+    e.preventDefault(); e.dataTransfer.dropEffect="move"; add.classList.add("trash-over");
+  });
+  add.addEventListener("dragleave", ()=> add.classList.remove("trash-over"));
+  add.addEventListener("drop", e=>{
+    if(!add.classList.contains("trash")) return;
+    e.preventDefault(); add.classList.remove("trash-over");
+    const id = e.dataTransfer.getData("text/plain");
+    if(byId[id]) deleteCustom(id);
+  });
+  dock.appendChild(add);
+}
+
+/* remove a custom AI from the library; clear any panel showing it */
+function deleteCustom(id){
+  const p = byId[id]; if(!p) return;
+  const i = PROVIDERS.findIndex(x=>x.id===id);
+  if(i>-1) PROVIDERS.splice(i,1);
+  delete byId[id];
+  let cleared = [];
+  ORDER.forEach(slot=>{
+    if(SLOTS[slot].provider===id){ SLOTS[slot]={provider:null,status:"empty"}; cleared.push(slot); }
+  });
+  renderDock();
+  cleared.forEach(renderPanel);
+  updateTargets();
+  showToast(`已删除 ${p.name}`, false);
+}
+
+/* =========================================================
+   PANEL render
+   ========================================================= */
+function visibleSlots(){ return ORDER.slice(0, mode); }
+
+function panelHead(slot, st){
+  const p = st.provider ? byId[st.provider] : null;
+  const name = p ? p.name : "空槽位";
+  let badge;
+  if(!p){
+    badge = `<div class="slot-badge">${slot}</div>`;                       // empty → slot identity
+  }else if(p.iconSm || p.icon){
+    badge = `<div class="slot-badge img"><img src="${p.iconSm || p.icon}" alt="${p.name}"></div>`;
+  }else{
+    const badgeStyle = `style="background:linear-gradient(160deg, color-mix(in oklab, ${p.hue} 70%, #2b2f33), #1d2024)"`;
+    badge = `<div class="slot-badge glyph${p.cjk?' cjk':''}" ${badgeStyle}>${p.glyph}</div>`;
+  }
+  return `
+    <div class="panel-head">
+      ${badge}
+      <div class="pv-name"><span class="nm">${name}</span></div>
+      <div class="head-actions">
+        <button class="icon-btn act-reload" title="刷新此面板" aria-label="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 4v4h-4"/></svg>
+        </button>
+        <button class="icon-btn act-close" title="关闭（保留为空槽位）" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+function panelBody(slot, st){
+  if(!st.provider){
+    return `
+      <div class="panel-body">
+        <div class="empty">
+          <div>
+            <div class="ghost">${slot}</div>
+            <div class="et">拖入 AI 开始</div>
+            <div class="es">从左侧库拖一个 AI 到这里加载</div>
+            <div class="ec">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              槽位 ${slot} 始终保留此位置
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+  const p = byId[st.provider];
+  const aux = (slot==="C"||slot==="D") && mode>=3;
+  const loading = st.status==="loading";
+  const feed = loading
+    ? `<div class="msg ai"><div class="role">${p.name}</div><div class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></div></div>`
+    : `
+      <div class="msg user"><div class="role">You</div>
+        <div class="bubble">帮我分别从产品、写作和工程角度分析这个想法</div></div>
+      <div class="msg ai"><div class="role">${p.name}</div>
+        <div class="body"><div class="sk">
+          <i class="l"></i><i class="xl"></i><i class="m"></i>
+          ${aux?'':'<i class="xl"></i><i class="l"></i><i class="s"></i>'}
+        </div></div>
+      </div>`;
+  return `
+    <div class="panel-body">
+      <div class="web">
+        <div class="web-bar">
+          <div class="url">
+            <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+            ${p.url}
+          </div>
+        </div>
+        <div class="web-feed" data-feed>${feed}</div>
+      </div>
+      <div class="drop-veil"><span class="pill">加载到 ${slot}</span></div>
+    </div>`;
+}
+
+function renderPanel(slot){
+  const el = workspace.querySelector(`.panel[data-slot="${slot}"]`);
+  const st = SLOTS[slot];
+  el.classList.toggle("aux", (slot==="C"||slot==="D") && mode>=3);
+  el.innerHTML = panelHead(slot, st) + panelBody(slot, st);
+  // wire header actions
+  const close = el.querySelector(".act-close");
+  if(close) close.addEventListener("click", ()=>closeSlot(slot));
+  const reload = el.querySelector(".act-reload");
+  if(reload) reload.addEventListener("click", ()=>reloadSlot(slot));
+  wireDrop(el, slot);
+}
+
+function renderAll(){ ORDER.forEach(renderPanel); }
+
+/* =========================================================
+   MODE switching
+   ========================================================= */
+function setMode(m){
+  mode = m;
+  workspace.className = "workspace m"+m;
+  const vis = visibleSlots();
+  ORDER.forEach(slot=>{
+    workspace.querySelector(`.panel[data-slot="${slot}"]`).classList.toggle("hidden", !vis.includes(slot));
+  });
+  modes.querySelectorAll(".mode-btn").forEach(b=>{
+    const on = Number(b.dataset.mode)===m;
+    b.setAttribute("aria-pressed", on);
+  });
+  positionThumb();
+  renderAll();
+  updateTargets();
+}
+
+function positionThumb(){
+  const btn = modes.querySelector(`.mode-btn[data-mode="${mode}"]`);
+  if(!btn) return;
+  thumb.style.width = btn.offsetWidth+"px";
+  thumb.style.transform = `translateX(${btn.offsetLeft - 3}px)`;
+}
+
+modes.querySelectorAll(".mode-btn").forEach(b=>{
+  b.addEventListener("click", ()=>setMode(Number(b.dataset.mode)));
+});
+
+/* =========================================================
+   COMPOSER targets
+   ========================================================= */
+function openTargets(){
+  return visibleSlots().filter(s=>SLOTS[s].provider);
+}
+function updateTargets(){
+  const open = openTargets();
+  $("#send").disabled = !open.length;   // send goes to all open panels of current mode
+}
+
+/* =========================================================
+   DROP: load AI into a panel (drag only)
+   ========================================================= */
+function wireDrop(el, slot){
+  el.addEventListener("dragover", e=>{ e.preventDefault(); e.dataTransfer.dropEffect="copy"; el.classList.add("drop"); });
+  el.addEventListener("dragleave", e=>{ if(!el.contains(e.relatedTarget)) el.classList.remove("drop"); });
+  el.addEventListener("drop", e=>{
+    e.preventDefault(); el.classList.remove("drop");
+    const id = e.dataTransfer.getData("text/plain");
+    if(!id || !byId[id]) return;
+    loadProvider(slot, id);
+  });
+}
+
+function loadProvider(slot, prov){
+  SLOTS[slot] = {provider:prov, status:"loading"};
+  renderPanel(slot);
+  updateTargets();
+  setTimeout(()=>{
+    if(SLOTS[slot].provider===prov){
+      SLOTS[slot].status = "ready";
+      renderPanel(slot);
+      updateTargets();
+    }
+  }, 850);
+}
+
+function closeSlot(slot){
+  SLOTS[slot] = {provider:null, status:"empty"};
+  renderPanel(slot);
+  updateTargets();
+}
+
+function reloadSlot(slot){
+  if(!SLOTS[slot].provider) return;
+  SLOTS[slot].status = "loading";
+  renderPanel(slot);
+  const prov = SLOTS[slot].provider;
+  setTimeout(()=>{ if(SLOTS[slot].provider===prov){ SLOTS[slot].status="ready"; renderPanel(slot); } }, 700);
+}
+
+/* =========================================================
+   SEND: default → all open panels of current mode
+   ========================================================= */
+function send(){
+  const open = openTargets();
+  const text = input.value.trim();
+  if(!open.length || !text) return;
+  open.forEach(slot=>{
+    const feed = workspace.querySelector(`.panel[data-slot="${slot}"] [data-feed]`);
+    if(!feed) return;
+    const u = document.createElement("div");
+    u.className = "msg user"; u.innerHTML = `<div class="role">You</div><div class="bubble">${escapeHtml(text)}</div>`;
+    const a = document.createElement("div");
+    const p = byId[SLOTS[slot].provider];
+    a.className = "msg ai"; a.innerHTML = `<div class="role">${p.name}</div><div class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></div>`;
+    feed.appendChild(u); feed.appendChild(a);
+    feed.scrollTop = feed.scrollHeight;
+    setTimeout(()=>{
+      a.innerHTML = `<div class="role">${p.name}</div><div class="body"><div class="sk"><i class="l"></i><i class="xl"></i><i class="m"></i></div></div>`;
+      feed.scrollTop = feed.scrollHeight;
+    }, 700 + Math.random()*500);
+  });
+  input.value = "";
+  autoGrow();
+  showToast(`已发送至 ${open.join(" · ")}`, false);
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+$("#send").addEventListener("click", send);
+
+/* =========================================================
+   COMPOSER textarea autogrow + ⌘↵
+   ========================================================= */
+function autoGrow(){ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,120)+"px"; }
+input.addEventListener("input", autoGrow);
+input.addEventListener("keydown", e=>{
+  if(e.key==="Enter" && (e.metaKey||e.ctrlKey)){ e.preventDefault(); send(); }
+});
+
+/* =========================================================
+   Cmd+R → refresh every open panel of current mode
+   ========================================================= */
+window.addEventListener("keydown", e=>{
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="r"){
+    e.preventDefault();
+    const open = openTargets();
+    if(!open.length){ showToast("没有可刷新的面板", false); return; }
+    showToast(`正在刷新 ${open.length} 个面板…`, true);
+    open.forEach(slot=>{ SLOTS[slot].status="loading"; renderPanel(slot); });
+    setTimeout(()=>{
+      open.forEach(slot=>{ if(SLOTS[slot].provider){ SLOTS[slot].status="ready"; renderPanel(slot); } });
+      showToast(`已刷新 ${open.join(" · ")}`, false);
+    }, 900);
+  }
+});
+
+let toastTimer;
+function showToast(msg, spin){
+  clearTimeout(toastTimer);
+  toast.innerHTML = (spin?'<span class="spin"></span>':'')+msg;
+  toast.classList.add("show");
+  if(!spin) toastTimer = setTimeout(()=>toast.classList.remove("show"), 1600);
+}
+
+/* =========================================================
+   Appearance (light / dark)
+   ========================================================= */
+const root = document.documentElement;
+const sun = `<circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2L5.6 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`;
+const moon = `<path d="M20 14.5A8 8 0 119.5 4 6.3 6.3 0 0020 14.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>`;
+function setTheme(t){ root.dataset.theme=t; $("#apprIcon").innerHTML = t==="dark"?sun:moon; }
+$("#appearance").addEventListener("click", ()=> setTheme(root.dataset.theme==="dark"?"light":"dark"));
+
+/* =========================================================
+   ADD CUSTOM AI
+   ========================================================= */
+const HUES = ["oklch(.6 .08 24)","oklch(.6 .08 140)","oklch(.58 .08 200)","oklch(.58 .08 312)","oklch(.6 .07 90)","oklch(.56 .07 280)"];
+let customCount = 0;
+let pendingIcon = null;        // data URL of chosen custom icon, or null
+const addModal = $("#addModal");
+const MAX_ICON = 512;          // hard cap on icon dimension
+
+function setPendingIcon(dataUrl){
+  pendingIcon = dataUrl;
+  const btn = $("#cIconBtn");
+  const glyph = $("#cIconGlyph");
+  btn.querySelector("img.mi-img")?.remove();
+  if(dataUrl){
+    btn.classList.add("has-img");
+    glyph.style.display = "none";
+    const img = document.createElement("img");
+    img.className = "mi-img"; img.src = dataUrl; img.alt = "icon";
+    btn.insertBefore(img, btn.querySelector(".mi-badge"));
+  }else{
+    btn.classList.remove("has-img");
+    glyph.style.display = "";
+  }
+}
+
+/* read a file, downscale so neither side exceeds MAX_ICON, return data URL */
+function processIconFile(file){
+  if(!file || !file.type.startsWith("image/")){ showToast("请选择图片文件", false); return; }
+  if(file.size > 4*1024*1024){ showToast("图片过大（上限 4MB）", false); return; }
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    // SVG: keep as-is (vector); just use the data URL
+    if(file.type === "image/svg+xml"){ setPendingIcon(reader.result); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      let {width:w, height:h} = img;
+      const scale = Math.min(1, MAX_ICON/Math.max(w, h));   // only ever shrink
+      w = Math.round(w*scale); h = Math.round(h*scale);
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      cv.getContext("2d").drawImage(img, 0, 0, w, h);
+      setPendingIcon(cv.toDataURL("image/png"));
+    };
+    img.onerror = ()=> showToast("无法读取该图片", false);
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+$("#cIconBtn").addEventListener("click", ()=> $("#cIconFile").click());
+$("#cIconFile").addEventListener("change", e=>{ processIconFile(e.target.files[0]); e.target.value=""; });
+
+function openAddDialog(){
+  addModal.hidden = false;
+  $("#cName").value = ""; $("#cUrl").value = "";
+  setPendingIcon(null);
+  setTimeout(()=>$("#cName").focus(), 30);
+}
+function closeAddDialog(){ addModal.hidden = true; }
+
+/* default glyph when no icon chosen: first letter (uppercase), or first CJK char */
+function deriveGlyph(name){
+  const t = name.trim();
+  const cjk = t.match(/[\u4e00-\u9fff]/);
+  if(cjk) return cjk[0];
+  const first = t.replace(/[^a-z0-9]/i,"").charAt(0) || t.charAt(0);
+  return first.toUpperCase();
+}
+function normUrl(u){ return u.trim().replace(/^https?:\/\//i,"").replace(/\/+$/,""); }
+
+function addCustom(){
+  const name = $("#cName").value.trim();
+  if(!name){ $("#cName").focus(); return; }
+  const url = normUrl($("#cUrl").value) || "example.com";
+  const id = "custom-"+(++customCount);
+  const cjk = /[\u4e00-\u9fff]/.test(name);
+  const p = {id, name, glyph:deriveGlyph(name), url, hue:HUES[(customCount-1)%HUES.length], cjk};
+  if(pendingIcon) p.icon = pendingIcon;
+  PROVIDERS.push(p); byId[id] = p;
+  renderDock();
+  closeAddDialog();
+  dock.scrollTop = dock.scrollHeight;
+  const tile = dock.querySelector(`[data-provider="${id}"]`);
+  if(tile && tile.animate){
+    tile.animate([{transform:"scale(.5)",opacity:0},{transform:"scale(1)",opacity:1}],
+      {duration:280, easing:"cubic-bezier(.22,.61,.36,1)"});
+  }
+  showToast(`已添加 ${name} · 拖到面板加载`, false);
+}
+
+$("#cCancel").addEventListener("click", closeAddDialog);
+$("#cAdd").addEventListener("click", addCustom);
+addModal.addEventListener("click", e=>{ if(e.target===addModal) closeAddDialog(); });
+$("#cName").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("#cUrl").focus(); } });
+$("#cUrl").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); addCustom(); } });
+window.addEventListener("keydown", e=>{ if(e.key==="Escape" && !addModal.hidden) closeAddDialog(); });
+
+/* =========================================================
+   INIT
+   ========================================================= */
+renderDock();
+setTheme("light");
+setMode(2);
+autoGrow();
+window.addEventListener("resize", positionThumb);
+setTimeout(positionThumb, 60); // after fonts settle
+</script>
+</body>
+</html>
+
+<style id="__om-edit-overrides">
+#dock >.cjk >.glyph { font-size: 13px !important }
+</style>

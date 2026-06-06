@@ -1,0 +1,24 @@
+.DS_Store
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Tauri / Rust build outputs
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/target/**/*
+
+# macOS packaged artifacts
+*.app
+*.dmg
+
+# Logs and local env
+*.log
+.env
+.env.*
+
+# Editor cruft
+.idea/
+.vscode/

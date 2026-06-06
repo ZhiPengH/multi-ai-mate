@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi AI Mate Test AI</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+        background: #eef1ee;
+        color: #202428;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+
+      main {
+        padding: 28px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      #log {
+        display: grid;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .message {
+        width: fit-content;
+        max-width: 78%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+      }
+
+      .message.user {
+        justify-self: end;
+        background: #dfece7;
+      }
+
+      footer {
+        display: flex;
+        gap: 10px;
+        padding: 14px;
+        background: rgb(255 255 255 / 0.7);
+        border-top: 1px solid rgb(0 0 0 / 0.08);
+      }
+
+      textarea {
+        flex: 1;
+        resize: none;
+        min-height: 42px;
+        border: 1px solid rgb(0 0 0 / 0.14);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 0 16px;
+        font: inherit;
+        font-weight: 700;
+        color: #fff;
+        background: #3f7d68;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Test AI</h1>
+      <p>本地免费测试页：用于验证 Multi AI Mate 是否能填入文本并点击发送。</p>
+      <div id="log">
+        <div class="message">等待输入...</div>
+      </div>
+    </main>
+    <footer>
+      <textarea aria-label="Message" placeholder="输入消息"></textarea>
+      <button aria-label="Send message" type="button">发送</button>
+    </footer>
+    <script>
+      const textarea = document.querySelector("textarea");
+      const button = document.querySelector("button");
+      const log = document.querySelector("#log");
+
+      function send() {
+        const text = textarea.value.trim();
+        if (!text) return;
+        const message = document.createElement("div");
+        message.className = "message user";
+        message.textContent = text;
+        log.appendChild(message);
+        textarea.value = "";
+        window.__multiAiMateLastMessage = text;
+      }
+
+      button.addEventListener("click", send);
+      textarea.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          send();
+        }
+      });
+    </script>
+  </body>
+</html>

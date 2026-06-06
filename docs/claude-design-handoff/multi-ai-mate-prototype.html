@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi AI Mate Prototype</title>
+  <style>
+    :root {
+      --bg: #d9dde0;
+      --surface: rgba(250, 250, 248, 0.72);
+      --surface-solid: #fbfaf8;
+      --surface-2: rgba(239, 238, 232, 0.7);
+      --glass: rgba(246, 246, 242, 0.58);
+      --glass-strong: rgba(255, 255, 255, 0.74);
+      --ink: #202326;
+      --muted: #626a70;
+      --line: rgba(35, 38, 42, 0.13);
+      --line-strong: rgba(35, 38, 42, 0.24);
+      --highlight: rgba(255, 255, 255, 0.78);
+      --accent: #176c66;
+      --accent-2: #ad533d;
+      --accent-soft: rgba(31, 122, 114, 0.14);
+      --empty: rgba(238, 237, 231, 0.58);
+      --shadow: 0 24px 70px rgba(30, 35, 38, 0.2);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(196, 206, 210, 0.9), rgba(240, 236, 227, 0.84) 46%, rgba(202, 216, 210, 0.92)),
+        linear-gradient(45deg, #c4c9cc, #ece5dc);
+      overflow: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent 74%);
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.2;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    .app {
+      position: relative;
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: 68px 1fr;
+      grid-template-rows: 56px 1fr 86px;
+      overflow: hidden;
+    }
+
+    .titlebar {
+      grid-column: 1 / 3;
+      display: grid;
+      grid-template-columns: 68px 1fr auto;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: rgba(248, 247, 243, 0.54);
+      backdrop-filter: blur(24px) saturate(1.45);
+      -webkit-backdrop-filter: blur(24px) saturate(1.45);
+      box-shadow: inset 0 1px 0 var(--highlight);
+      z-index: 5;
+    }
+
+    .window-dots {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: #d4d0c8;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .dot.close {
+      background: #ef6a5f;
+    }
+
+    .dot.min {
+      background: #f5bf4f;
+    }
+
+    .dot.max {
+      background: #64c45b;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--ink);
+      color: white;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .status-line {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .mode-group {
+      margin-right: 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      background: rgba(225, 226, 222, 0.48);
+      backdrop-filter: blur(18px) saturate(1.3);
+      -webkit-backdrop-filter: blur(18px) saturate(1.3);
+      border-radius: 8px;
+      box-shadow: inset 0 1px 0 var(--highlight);
+    }
+
+    .mode-button {
+      min-width: 56px;
+      height: 32px;
+      border: 0;
+      border-radius: 6px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .mode-button.active {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 1px 8px rgba(31, 35, 40, 0.16), inset 0 1px 0 var(--highlight);
+    }
+
+    .dock {
+      grid-row: 2 / 4;
+      border-right: 1px solid var(--line);
+      background: rgba(232, 231, 225, 0.48);
+      backdrop-filter: blur(28px) saturate(1.38);
+      -webkit-backdrop-filter: blur(28px) saturate(1.38);
+      box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.46);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      z-index: 2;
+    }
+
+    .dock-item {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(16px) saturate(1.2);
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      color: var(--ink);
+      cursor: grab;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0;
+      user-select: none;
+      box-shadow: inset 0 1px 0 var(--highlight), 0 8px 20px rgba(31, 35, 40, 0.08);
+    }
+
+    .dock-item:active {
+      cursor: grabbing;
+    }
+
+    .dock-item:hover {
+      border-color: var(--accent);
+      box-shadow: 0 6px 18px rgba(37, 111, 104, 0.16);
+    }
+
+    .dock-item.custom {
+      color: var(--accent-2);
+      border-style: dashed;
+    }
+
+    .workspace {
+      grid-column: 2;
+      grid-row: 2;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .workspace.mode-1 {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .workspace.mode-2 {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: 1fr;
+    }
+
+    .workspace.mode-3 {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.8fr);
+      grid-template-rows: 1fr;
+    }
+
+    .workspace.mode-4 {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.8fr);
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+      backdrop-filter: blur(20px) saturate(1.22);
+      -webkit-backdrop-filter: blur(20px) saturate(1.22);
+      display: grid;
+      grid-template-rows: 42px 1fr;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 12px 34px rgba(31, 35, 40, 0.09);
+    }
+
+    .panel.drop-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
+    }
+
+    .panel.hidden {
+      display: none;
+    }
+
+    .panel-a {
+      grid-column: 1;
+      grid-row: 1 / -1;
+    }
+
+    .panel-b {
+      grid-column: 2;
+      grid-row: 1 / -1;
+    }
+
+    .panel-c {
+      grid-column: 3;
+      grid-row: 1;
+    }
+
+    .mode-3 .panel-c {
+      grid-row: 1 / -1;
+    }
+
+    .panel-d {
+      grid-column: 3;
+      grid-row: 2;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 246, 241, 0.54);
+      backdrop-filter: blur(14px) saturate(1.2);
+      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+      box-shadow: inset 0 1px 0 var(--highlight);
+      min-width: 0;
+    }
+
+    .slot {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--ink);
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+
+    .provider-name {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .provider-name strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .provider-name span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      min-height: 0;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.58)),
+        repeating-linear-gradient(0deg, transparent 0, transparent 28px, rgba(31, 35, 40, 0.045) 29px),
+        var(--surface-solid);
+      position: relative;
+      padding: 16px;
+    }
+
+    .browser-mock {
+      height: 100%;
+      border: 1px solid rgba(31, 35, 40, 0.08);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.68);
+      padding: 14px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .browser-url {
+      height: 28px;
+      border-radius: 6px;
+      background: #ebe8df;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: 12px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .answer-lines {
+      display: grid;
+      align-content: start;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    .line {
+      height: 10px;
+      border-radius: 999px;
+      background: #d8d4ca;
+    }
+
+    .line.short {
+      width: 44%;
+    }
+
+    .line.mid {
+      width: 68%;
+    }
+
+    .line.long {
+      width: 88%;
+    }
+
+    .empty-state {
+      height: 100%;
+      border: 1px dashed var(--line-strong);
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      background: var(--empty);
+      color: var(--muted);
+      text-align: center;
+      padding: 18px;
+      font-size: 13px;
+    }
+
+    .empty-state strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .composer {
+      grid-column: 2;
+      grid-row: 3;
+      border-top: 1px solid var(--line);
+      background: rgba(248, 247, 243, 0.56);
+      backdrop-filter: blur(26px) saturate(1.42);
+      -webkit-backdrop-filter: blur(26px) saturate(1.42);
+      box-shadow: inset 0 1px 0 var(--highlight);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .composer-box {
+      height: 58px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(12px) saturate(1.12);
+      -webkit-backdrop-filter: blur(12px) saturate(1.12);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 var(--highlight), 0 10px 24px rgba(31, 35, 40, 0.08);
+    }
+
+    .composer input {
+      min-width: 0;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      padding: 0 16px;
+      color: var(--ink);
+      background: transparent;
+    }
+
+    .target-hint {
+      padding-right: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .send {
+      height: 42px;
+      min-width: 94px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .send:hover {
+      background: #1f5f59;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        min-height: 820px;
+      }
+
+      .workspace.mode-3,
+      .workspace.mode-4 {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: minmax(0, 1fr) minmax(220px, 0.72fr);
+      }
+
+      .mode-3 .panel-a,
+      .mode-4 .panel-a {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      .mode-3 .panel-b,
+      .mode-4 .panel-b {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .mode-3 .panel-c {
+        grid-column: 1 / 3;
+        grid-row: 2;
+      }
+
+      .mode-4 .panel-c {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      .mode-4 .panel-d {
+        grid-column: 2;
+        grid-row: 2;
+      }
+
+      .target-hint {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="titlebar">
+      <div class="window-dots" aria-hidden="true">
+        <span class="dot close"></span>
+        <span class="dot min"></span>
+        <span class="dot max"></span>
+      </div>
+      <div class="brand">
+        <div class="brand-mark">MM</div>
+        <div>
+          <h1>Multi AI Mate</h1>
+          <div class="status-line">Cmd+R refreshes every open panel</div>
+        </div>
+      </div>
+      <nav class="mode-group" aria-label="AI mode">
+        <button class="mode-button" data-mode="1">1 AI</button>
+        <button class="mode-button active" data-mode="2">2 AI</button>
+        <button class="mode-button" data-mode="3">3 AI</button>
+        <button class="mode-button" data-mode="4">4 AI</button>
+      </nav>
+    </header>
+
+    <aside class="dock" aria-label="AI provider dock">
+      <div class="dock-item" draggable="true" data-provider="ChatGPT" data-url="https://chatgpt.com">GPT</div>
+      <div class="dock-item" draggable="true" data-provider="Claude" data-url="https://claude.ai">CLD</div>
+      <div class="dock-item" draggable="true" data-provider="Gemini" data-url="https://gemini.google.com">GEM</div>
+      <div class="dock-item" draggable="true" data-provider="豆包" data-url="https://www.doubao.com">豆包</div>
+      <div class="dock-item" draggable="true" data-provider="DeepSeek" data-url="https://chat.deepseek.com">DS</div>
+      <div class="dock-item" draggable="true" data-provider="Kimi" data-url="https://kimi.moonshot.cn">KIM</div>
+      <div class="dock-item" draggable="true" data-provider="Grok" data-url="https://grok.com">GRK</div>
+      <div class="dock-item custom" draggable="true" data-provider="Custom" data-url="https://example.com">ADD</div>
+    </aside>
+
+    <section class="workspace mode-2" id="workspace">
+      <article class="panel panel-a" data-slot="A" data-provider="ChatGPT" data-url="https://chatgpt.com">
+        <div class="panel-head">
+          <div class="slot">A</div>
+          <div class="provider-name"><strong>ChatGPT</strong><span>Ready</span></div>
+        </div>
+        <div class="panel-body"></div>
+      </article>
+
+      <article class="panel panel-b" data-slot="B" data-provider="Claude" data-url="https://claude.ai">
+        <div class="panel-head">
+          <div class="slot">B</div>
+          <div class="provider-name"><strong>Claude</strong><span>Ready</span></div>
+        </div>
+        <div class="panel-body"></div>
+      </article>
+
+      <article class="panel panel-c hidden" data-slot="C" data-provider="Gemini" data-url="https://gemini.google.com">
+        <div class="panel-head">
+          <div class="slot">C</div>
+          <div class="provider-name"><strong>Gemini</strong><span>Ready</span></div>
+        </div>
+        <div class="panel-body"></div>
+      </article>
+
+      <article class="panel panel-d hidden" data-slot="D" data-provider="" data-url="">
+        <div class="panel-head">
+          <div class="slot">D</div>
+          <div class="provider-name"><strong>Empty slot</strong><span>Empty</span></div>
+        </div>
+        <div class="panel-body"></div>
+      </article>
+    </section>
+
+    <footer class="composer">
+      <div class="composer-box">
+        <input aria-label="Message" value="帮我分别从产品、写作和工程角度分析这个想法">
+        <div class="target-hint" id="targetHint">Send to A and B</div>
+      </div>
+      <button class="send">Send</button>
+    </footer>
+  </main>
+
+  <script>
+    const workspace = document.getElementById('workspace');
+    const targetHint = document.getElementById('targetHint');
+    const modeButtons = Array.from(document.querySelectorAll('.mode-button'));
+    const panels = Array.from(document.querySelectorAll('.panel'));
+    const dockItems = Array.from(document.querySelectorAll('.dock-item'));
+
+    let currentMode = 2;
+
+    function renderPanelBody(panel) {
+      const body = panel.querySelector('.panel-body');
+      const provider = panel.dataset.provider;
+      const url = panel.dataset.url;
+
+      if (!provider) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <div>
+              <strong>拖入 AI 开始</strong>
+              <span>Slot ${panel.dataset.slot} will keep its position</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      body.innerHTML = `
+        <div class="browser-mock">
+          <div class="browser-url">${url}</div>
+          <div class="answer-lines">
+            <div class="line long"></div>
+            <div class="line mid"></div>
+            <div class="line long"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="browser-url">${provider} response preview</div>
+        </div>
+      `;
+    }
+
+    function visibleSlots(mode) {
+      if (mode === 1) return ['A'];
+      if (mode === 2) return ['A', 'B'];
+      if (mode === 3) return ['A', 'B', 'C'];
+      return ['A', 'B', 'C', 'D'];
+    }
+
+    function updateMode(mode) {
+      currentMode = mode;
+      workspace.className = `workspace mode-${mode}`;
+
+      const visible = visibleSlots(mode);
+      panels.forEach((panel) => {
+        panel.classList.toggle('hidden', !visible.includes(panel.dataset.slot));
+      });
+
+      modeButtons.forEach((button) => {
+        button.classList.toggle('active', Number(button.dataset.mode) === mode);
+      });
+
+      const openSlots = panels
+        .filter((panel) => visible.includes(panel.dataset.slot) && panel.dataset.provider)
+        .map((panel) => panel.dataset.slot);
+
+      targetHint.textContent = openSlots.length
+        ? `Send to ${openSlots.join(', ')}`
+        : 'No open panel';
+    }
+
+    function assignProvider(panel, provider, url) {
+      panel.dataset.provider = provider;
+      panel.dataset.url = url;
+      panel.querySelector('.provider-name strong').textContent = provider;
+      panel.querySelector('.provider-name span').textContent = 'Ready';
+      renderPanelBody(panel);
+      updateMode(currentMode);
+    }
+
+    dockItems.forEach((item) => {
+      item.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('application/json', JSON.stringify({
+          provider: item.dataset.provider,
+          url: item.dataset.url
+        }));
+      });
+    });
+
+    panels.forEach((panel) => {
+      panel.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        panel.classList.add('drop-target');
+      });
+
+      panel.addEventListener('dragleave', () => {
+        panel.classList.remove('drop-target');
+      });
+
+      panel.addEventListener('drop', (event) => {
+        event.preventDefault();
+        panel.classList.remove('drop-target');
+        const raw = event.dataTransfer.getData('application/json');
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        assignProvider(panel, data.provider, data.url);
+      });
+    });
+
+    modeButtons.forEach((button) => {
+      button.addEventListener('click', () => updateMode(Number(button.dataset.mode)));
+    });
+
+    panels.forEach(renderPanelBody);
+    updateMode(currentMode);
+  </script>
+</body>
+</html>

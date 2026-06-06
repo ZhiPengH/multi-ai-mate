@@ -1,10 +1,10 @@
+![Multi AI Mate cover](docs/multi-ai-mate-readme-hero.jpg)
+
 # Multi AI Mate
 
 Multi AI Mate is a macOS-first multi-AI desktop workspace built with React, Vite, and Tauri.
 
 It lets you open multiple AI web apps side by side, drag providers into fixed panel slots, and send one prompt to every open panel in the current mode.
-
-![Multi AI Mate running UI](docs/multi-ai-mate-running-ui.png)
 
 ## Download
 

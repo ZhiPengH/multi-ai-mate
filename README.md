@@ -6,6 +6,10 @@ It lets you open multiple AI web apps side by side, drag providers into fixed pa
 
 ![Multi AI Mate running UI](docs/multi-ai-mate-running-ui.png)
 
+## Download
+
+Desktop installers for macOS and Windows are published together on the [GitHub Releases page](https://github.com/ZhiPengH/multi-ai-mate/releases).
+
 ## Features
 
 - 1 AI / 2 AI / 3 AI / 4 AI workspace modes

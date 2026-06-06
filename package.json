@@ -1,14 +1,14 @@
 {
   "name": "multi-ai-mate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "tauri": "PATH=$HOME/.cargo/bin:$PATH tauri",
-    "dev:desktop": "PATH=$HOME/.cargo/bin:$PATH tauri dev",
-    "desktop": "PATH=$HOME/.cargo/bin:$PATH tauri dev",
-    "build:desktop": "PATH=$HOME/.cargo/bin:$PATH tauri build",
+    "tauri": "tauri",
+    "dev:desktop": "tauri dev",
+    "desktop": "tauri dev",
+    "build:desktop": "tauri build",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run"

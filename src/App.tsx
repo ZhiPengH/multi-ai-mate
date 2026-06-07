@@ -3,11 +3,9 @@ import {
   ChevronDown,
   Moon,
   Paperclip,
-  RefreshCw,
   SendHorizontal,
   Sun,
   Trash2,
-  X,
 } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -302,6 +300,21 @@ export function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault();
         refreshAllOpen();
+        return;
+      }
+
+      const shortcutSlot = slotFromDigitCode(event.code);
+      if (!shortcutSlot) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
+        event.preventDefault();
+        reloadSlot(shortcutSlot);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.altKey) {
+        event.preventDefault();
+        closeSlot(shortcutSlot);
       }
     };
 
@@ -390,7 +403,7 @@ export function App() {
         });
         return next;
       });
-      showToast(`已刷新 ${targets.join(' · ')}`);
+      showToast(`已刷新 ${targets.length} 个面板`);
     }, 900);
   }
 
@@ -436,11 +449,11 @@ export function App() {
     });
 
     setMessage('');
-    showToast(`正在发送至 ${openSlots.join(' · ')}`, true);
+    showToast(`正在发送至 ${openSlots.length} 个 AI`, true);
     void nativeWebviews
       .sendToSlots(openSlots, text, true)
       .then(() => {
-        showToast(`已发送至 ${openSlots.join(' · ')}`);
+        showToast(`已发送至 ${openSlots.length} 个 AI`);
       })
       .catch((error) => {
         console.error('Failed to send message to native webviews', error);
@@ -460,6 +473,13 @@ export function App() {
       event.preventDefault();
       sendMessage();
     }
+  }
+
+  function slotFromDigitCode(code: string): SlotId | null {
+    const match = code.match(/^Digit([1-4])$/);
+    if (!match) return null;
+    const slot = SLOT_ORDER[Number(match[1]) - 1];
+    return activeSlots.includes(slot) ? slot : null;
   }
 
   function startTitlebarDrag(event: MouseEvent<HTMLElement>) {
@@ -573,7 +593,7 @@ export function App() {
 
         <div className="title-right" data-no-drag>
           <nav className="modes" aria-label="AI mode">
-            <span className="thumb" style={{ transform: `translateX(${(mode - 1) * 52}px)` }} />
+            <span className="thumb" style={{ transform: `translateX(${(mode - 1) * 92}px)` }} />
             {([1, 2, 3, 4] as Mode[]).map((item) => (
               <button
                 className="mode-btn"
@@ -623,7 +643,6 @@ export function App() {
             onDrop={onTrashDrop}
           >
             <span className="glyph">{draggingProvider ? <Trash2 /> : '+'}</span>
-            <span className="tip">{draggingProvider ? '拖到此处删除自定义 AI' : '添加自定义 AI'}</span>
           </button>
         </div>
       </aside>
@@ -639,8 +658,6 @@ export function App() {
             auxiliary={(slot === 'C' || slot === 'D') && mode >= 3}
             dropping={dropSlot === slot}
             mode={mode}
-            onClose={() => closeSlot(slot)}
-            onReload={() => reloadSlot(slot)}
             bodyRef={(node) => {
               panelBodyRefs.current[slot] = node;
             }}
@@ -774,7 +791,6 @@ function ProviderTile({
       ) : (
         <span className="glyph">{provider.glyph}</span>
       )}
-      <span className="tip">{provider.name}</span>
     </div>
   );
 }
@@ -787,8 +803,6 @@ function Panel({
   auxiliary,
   dropping,
   mode,
-  onClose,
-  onReload,
   bodyRef,
   onDragOver,
   onDragLeave,
@@ -801,8 +815,6 @@ function Panel({
   auxiliary: boolean;
   dropping: boolean;
   mode: Mode;
-  onClose: () => void;
-  onReload: () => void;
   bodyRef: (node: HTMLDivElement | null) => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDragLeave: (event: DragEvent<HTMLElement>) => void;
@@ -817,32 +829,24 @@ function Panel({
       onDrop={onDrop}
     >
       <div className="panel-head">
-        <PanelBadge slot={slot} provider={provider} />
+        <PanelBadge provider={provider} />
         <div className="pv-name">
           <span className="nm">{provider ? provider.name : '空槽位'}</span>
-        </div>
-        <div className="head-actions">
-          <button className="icon-btn act-reload" title="刷新此面板" aria-label="刷新" type="button" onClick={onReload}>
-            <RefreshCw />
-          </button>
-          <button className="icon-btn act-close" title="关闭（保留为空槽位）" aria-label="关闭" type="button" onClick={onClose}>
-            <X />
-          </button>
         </div>
       </div>
 
       <div className="panel-body" ref={bodyRef}>
-        {provider ? <WebPreview slot={slot} provider={provider} state={state} mode={mode} /> : <EmptySlot slot={slot} />}
+        {provider ? <WebPreview slot={slot} provider={provider} state={state} mode={mode} /> : <EmptySlot />}
         <div className="drop-veil">
-          <span className="pill">加载到 {slot}</span>
+          <span className="pill">释放加载</span>
         </div>
       </div>
     </article>
   );
 }
 
-function PanelBadge({ slot, provider }: { slot: SlotId; provider: Provider | null }) {
-  if (!provider) return <div className="slot-badge">{slot}</div>;
+function PanelBadge({ provider }: { provider: Provider | null }) {
+  if (!provider) return <div className="slot-badge empty-mark">+</div>;
   if (provider.iconSm || provider.icon) {
     return (
       <div className="slot-badge img">
@@ -917,6 +921,7 @@ function UserMessage({ text }: { text: string }) {
 function AiTyping({ provider }: { provider: Provider }) {
   return (
     <div className="msg ai">
+      <ProviderAvatar provider={provider} />
       <div className="role">{provider.name}</div>
       <div className="typing">
         <span className="d" />
@@ -930,6 +935,7 @@ function AiTyping({ provider }: { provider: Provider }) {
 function AiSkeleton({ provider, compact }: { provider: Provider; compact: boolean }) {
   return (
     <div className="msg ai">
+      <ProviderAvatar provider={provider} />
       <div className="role">{provider.name}</div>
       <div className="body">
         <div className="sk">
@@ -949,14 +955,23 @@ function AiSkeleton({ provider, compact }: { provider: Provider; compact: boolea
   );
 }
 
-function EmptySlot({ slot }: { slot: SlotId }) {
+function ProviderAvatar({ provider }: { provider: Provider }) {
+  if (provider.iconSm || provider.icon) {
+    return <img className="msg-avatar" src={provider.iconSm ?? provider.icon} alt="" />;
+  }
+  return (
+    <span className={`msg-avatar glyph ${provider.cjk ? 'cjk' : ''}`} style={{ '--g': provider.hue } as React.CSSProperties}>
+      {provider.glyph}
+    </span>
+  );
+}
+
+function EmptySlot() {
   return (
     <div className="empty">
       <div>
-        <div className="ghost">{slot}</div>
         <div className="et">拖入 AI 开始</div>
         <div className="es">从左侧库拖一个 AI 到这里加载</div>
-        <div className="ec">槽位 {slot} 始终保留此位置</div>
       </div>
     </div>
   );

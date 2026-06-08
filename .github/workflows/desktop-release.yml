@@ -68,13 +68,13 @@ jobs:
         with:
           args: ${{ matrix.args }}
 
+      - name: Collect desktop bundles
+        run: npm run collect:desktop
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: multi-ai-mate-${{ matrix.name }}
           path: |
-            src-tauri/target/release/bundle/**/*.app
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
+            release/**
           if-no-files-found: warn

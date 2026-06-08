@@ -1,6 +1,6 @@
 {
   "name": "multi-ai-mate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "dev:desktop": "tauri dev",
     "desktop": "tauri dev",
-    "build:desktop": "tauri build",
+    "build:desktop": "tauri build && node scripts/collect-desktop-bundles.mjs",
+    "collect:desktop": "node scripts/collect-desktop-bundles.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run"

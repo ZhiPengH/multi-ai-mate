@@ -9,11 +9,13 @@ import {
 } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ChangeEvent, DragEvent, KeyboardEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, KeyboardEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  EMPTY_COMPOSER_MESSAGE,
   Mode,
   normalizeProviderUrl,
   openTargetSlots,
+  slotAtPoint,
   SlotId,
   SLOT_ORDER,
   visibleSlots,
@@ -47,6 +49,12 @@ type Message = {
   provider?: string;
   text?: string;
   loading?: boolean;
+};
+
+type PointerDragState = {
+  providerId: string;
+  x: number;
+  y: number;
 };
 
 const BASE_PROVIDERS: Provider[] = [
@@ -135,11 +143,6 @@ type PersistedWorkspace = {
 };
 
 const starterMessages = (provider: string): Message[] => [
-  {
-    id: crypto.randomUUID(),
-    role: 'user',
-    text: '帮我分别从产品、写作和工程角度分析这个想法',
-  },
   {
     id: crypto.randomUUID(),
     role: 'ai',
@@ -236,7 +239,8 @@ export function App() {
   });
   const [draggingProvider, setDraggingProvider] = useState<string | null>(null);
   const [dropSlot, setDropSlot] = useState<SlotId | null>(null);
-  const [message, setMessage] = useState('帮我分别从产品、写作和工程角度分析这个想法');
+  const [pointerDrag, setPointerDrag] = useState<PointerDragState | null>(null);
+  const [message, setMessage] = useState(EMPTY_COMPOSER_MESSAGE);
   const [toast, setToast] = useState<{ text: string; spinning?: boolean } | null>(null);
   const [isCustomOpen, setIsCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -246,6 +250,12 @@ export function App() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toastTimer = useRef<number | null>(null);
   const panelBodyRefs = useRef<Record<SlotId, HTMLDivElement | null>>({
+    A: null,
+    B: null,
+    C: null,
+    D: null,
+  });
+  const panelRefs = useRef<Record<SlotId, HTMLElement | null>>({
     A: null,
     B: null,
     C: null,
@@ -504,11 +514,84 @@ export function App() {
     setDropSlot(null);
   }
 
+  function slotFromClientPoint(x: number, y: number) {
+    const rects = activeSlots
+      .map((slot) => {
+        const rect = panelRefs.current[slot]?.getBoundingClientRect();
+        return rect
+          ? {
+              slot,
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+            }
+          : null;
+      })
+      .filter((rect): rect is NonNullable<typeof rect> => Boolean(rect));
+
+    return slotAtPoint(rects, x, y);
+  }
+
+  function onProviderPointerDown(providerId: string, event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+
+    setDraggingProvider(providerId);
+    setPointerDrag({ providerId, x: event.clientX, y: event.clientY });
+
+    const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+      setPointerDrag((current) =>
+        current?.providerId === providerId ? { providerId, x: moveEvent.clientX, y: moveEvent.clientY } : current,
+      );
+      setDropSlot(slotFromClientPoint(moveEvent.clientX, moveEvent.clientY));
+    };
+
+    const finishPointerDrag = (upEvent: globalThis.PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', finishPointerDrag);
+      window.removeEventListener('pointercancel', finishPointerDrag);
+
+      const slot = slotFromClientPoint(upEvent.clientX, upEvent.clientY);
+      setPointerDrag(null);
+      setDraggingProvider(null);
+      setDropSlot(null);
+
+      if (!slot || !providersById[providerId]) return;
+      loadProvider(slot, providerId);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', finishPointerDrag);
+    window.addEventListener('pointercancel', finishPointerDrag);
+  }
+
   function onPanelDrop(slot: SlotId, event: DragEvent<HTMLElement>) {
     event.preventDefault();
     const providerId = event.dataTransfer.getData('text/plain');
     setDropSlot(null);
     if (!providersById[providerId]) return;
+    loadProvider(slot, providerId);
+  }
+
+  function slotFromDropPoint(event: DragEvent<HTMLElement>) {
+    return slotFromClientPoint(event.clientX, event.clientY);
+  }
+
+  function onWorkspaceDragOver(event: DragEvent<HTMLElement>) {
+    if (!draggingProvider) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDropSlot(slotFromDropPoint(event));
+  }
+
+  function onWorkspaceDrop(event: DragEvent<HTMLElement>) {
+    if (!draggingProvider) return;
+    event.preventDefault();
+    const providerId = event.dataTransfer.getData('text/plain') || draggingProvider;
+    const slot = slotFromDropPoint(event);
+    setDropSlot(null);
+    if (!slot || !providersById[providerId]) return;
     loadProvider(slot, providerId);
   }
 
@@ -627,6 +710,7 @@ export function App() {
               draggingProvider={draggingProvider}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
+              onPointerDown={onProviderPointerDown}
             />
           ))}
           <div className="dock-sep" />
@@ -658,6 +742,9 @@ export function App() {
             auxiliary={(slot === 'C' || slot === 'D') && mode >= 3}
             dropping={dropSlot === slot}
             mode={mode}
+            panelRef={(node) => {
+              panelRefs.current[slot] = node;
+            }}
             bodyRef={(node) => {
               panelBodyRefs.current[slot] = node;
             }}
@@ -672,6 +759,17 @@ export function App() {
             onDrop={(event) => onPanelDrop(slot, event)}
           />
         ))}
+        {draggingProvider && (
+          <div
+            className="workspace-drop-layer"
+            aria-hidden="true"
+            onDragOver={onWorkspaceDragOver}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropSlot(null);
+            }}
+            onDrop={onWorkspaceDrop}
+          />
+        )}
       </section>
 
       <footer className="composer">
@@ -703,6 +801,10 @@ export function App() {
           {toast.spinning && <span className="spin" />}
           {toast.text}
         </div>
+      )}
+
+      {pointerDrag?.providerId && providersById[pointerDrag.providerId] && (
+        <DragGhost provider={providersById[pointerDrag.providerId]} x={pointerDrag.x} y={pointerDrag.y} />
       )}
 
       {isCustomOpen && (
@@ -767,11 +869,13 @@ function ProviderTile({
   draggingProvider,
   onDragStart,
   onDragEnd,
+  onPointerDown,
 }: {
   provider: Provider;
   draggingProvider: string | null;
   onDragStart: (providerId: string, event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onPointerDown: (providerId: string, event: PointerEvent<HTMLElement>) => void;
 }) {
   const solo = !provider.icon && [...provider.glyph].length === 1;
 
@@ -785,11 +889,24 @@ function ProviderTile({
       style={{ '--g': provider.hue } as React.CSSProperties}
       onDragStart={(event) => onDragStart(provider.id, event)}
       onDragEnd={onDragEnd}
+      onPointerDown={(event) => onPointerDown(provider.id, event)}
     >
       {provider.icon ? (
         <img className="glyph ico" src={provider.icon} alt={provider.name} draggable={false} />
       ) : (
         <span className="glyph">{provider.glyph}</span>
+      )}
+    </div>
+  );
+}
+
+function DragGhost({ provider, x, y }: { provider: Provider; x: number; y: number }) {
+  return (
+    <div className="drag-ghost" style={{ transform: `translate3d(${x}px, ${y}px, 0)` }}>
+      {provider.icon ? (
+        <img src={provider.icon} alt="" draggable={false} />
+      ) : (
+        <span className={provider.cjk ? 'cjk' : ''}>{provider.glyph}</span>
       )}
     </div>
   );
@@ -804,6 +921,7 @@ function Panel({
   dropping,
   mode,
   bodyRef,
+  panelRef,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -816,6 +934,7 @@ function Panel({
   dropping: boolean;
   mode: Mode;
   bodyRef: (node: HTMLDivElement | null) => void;
+  panelRef: (node: HTMLElement | null) => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDragLeave: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
@@ -824,6 +943,7 @@ function Panel({
     <article
       className={`panel ${auxiliary ? 'aux' : ''} ${visible ? '' : 'hidden'} ${dropping ? 'drop' : ''}`}
       data-slot={slot}
+      ref={panelRef}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}

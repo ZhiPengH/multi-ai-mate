@@ -249,6 +249,7 @@ export function App() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const rightCtrlDown = useRef(false);
   const panelBodyRefs = useRef<Record<SlotId, HTMLDivElement | null>>({
     A: null,
     B: null,
@@ -307,6 +308,17 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.code === 'ControlRight') {
+        rightCtrlDown.current = true;
+        return;
+      }
+
+      if (rightCtrlDown.current && event.key === 'Enter') {
+        event.preventDefault();
+        sendMessage();
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault();
         refreshAllOpen();
@@ -328,8 +340,16 @@ export function App() {
       }
     };
 
+    const onKeyUp = (event: globalThis.KeyboardEvent) => {
+      if (event.code === 'ControlRight') rightCtrlDown.current = false;
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   });
 
   useEffect(() => {
@@ -481,6 +501,7 @@ export function App() {
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
+      event.stopPropagation();
       sendMessage();
     }
   }

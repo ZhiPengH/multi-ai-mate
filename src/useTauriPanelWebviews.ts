@@ -4,6 +4,11 @@ import type { Webview as TauriWebview } from '@tauri-apps/api/webview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Mode, normalizeProviderUrl, SlotId, SLOT_ORDER, visibleSlots } from './appModel';
 import {
+  createPanelSyncCoordinator,
+  reclaimStalePanelWebview,
+  type PanelSyncCoordinator,
+} from './panelWebviewSync';
+import {
   PANEL_SELECTED_EVENT,
   panelWebviewLabel,
   slotFromPanelWebviewLabel,
@@ -74,6 +79,8 @@ export function useTauriPanelWebviews({
 }: TauriPanelWebviewsOptions): TauriPanelWebviewControls {
   const [enabled, setEnabled] = useState(false);
   const webviewsRef = useRef(new Map<SlotId, NativeWebviewEntry>());
+  const syncCoordinatorRef = useRef<PanelSyncCoordinator | null>(null);
+  if (!syncCoordinatorRef.current) syncCoordinatorRef.current = createPanelSyncCoordinator();
 
   useEffect(() => {
     setEnabled(isTauri());
@@ -102,6 +109,8 @@ export function useTauriPanelWebviews({
     if (!enabled) return;
 
     let disposed = false;
+    const generation = syncCoordinatorRef.current!.beginGeneration();
+    const isCurrent = () => !disposed && generation.isCurrent();
 
     async function syncWebviews() {
       const [{ Webview }, { LogicalPosition, LogicalSize }] = await Promise.all([
@@ -109,11 +118,13 @@ export function useTauriPanelWebviews({
         import('@tauri-apps/api/dpi'),
       ]);
 
-      if (disposed) return;
+      if (!isCurrent()) return;
 
       const activeSlots = new Set(visibleSlots(mode));
 
       for (const slot of SLOT_ORDER) {
+        if (!isCurrent()) return;
+
         const existing = webviewsRef.current.get(slot);
         const providerId = activeSlots.has(slot) ? slots[slot].provider : null;
         const provider = providerId ? providersById[providerId] : undefined;
@@ -149,6 +160,11 @@ export function useTauriPanelWebviews({
         await invoke('panel_webview_create', { label, url, bounds });
         const webview = await Webview.getByLabel(label);
         if (!webview) throw new Error(`Created WebView not found: ${label}`);
+        const staleCleanup = reclaimStalePanelWebview(webview, isCurrent);
+        if (staleCleanup) {
+          await staleCleanup;
+          return;
+        }
 
         webviewsRef.current.set(slot, {
           providerId: provider.id,
@@ -163,7 +179,7 @@ export function useTauriPanelWebviews({
     }
 
     const run = () => {
-      syncWebviews().catch((error) => {
+      generation.run(syncWebviews).catch((error) => {
         console.error('Failed to sync Tauri webviews', error);
       });
     };
@@ -180,6 +196,7 @@ export function useTauriPanelWebviews({
 
     return () => {
       disposed = true;
+      generation.invalidate();
       resizeObserver.disconnect();
       window.removeEventListener('resize', run);
     };

@@ -538,7 +538,17 @@ button {
   grid-row: 2;
 }
 
-.panel.drop {
+.panel.selected {
+  border-color: color-mix(in oklab, var(--accent) 72%, var(--line));
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px var(--accent-soft), var(--shadow-panel);
+}
+
+.panel.aux.selected {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px var(--accent-soft), var(--shadow-panel-2);
+}
+
+.panel.drop,
+.panel.aux.drop {
   border-color: transparent;
   box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px var(--accent-soft), var(--shadow-panel);
 }

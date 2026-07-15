@@ -21,6 +21,12 @@ import {
   visibleSlots,
 } from './appModel';
 import { useTauriPanelWebviews } from './useTauriPanelWebviews';
+import {
+  normalizeSelectedSlot,
+  primaryModifierForPlatform,
+  zoomActionFromKeyboardEvent,
+  zoomTargetSlots,
+} from './zoomModel';
 
 type SlotStatus = 'ready' | 'loading' | 'empty';
 type Theme = 'light' | 'dark';
@@ -246,6 +252,7 @@ export function App() {
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [customIcon, setCustomIcon] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SlotId | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toastTimer = useRef<number | null>(null);
@@ -265,13 +272,19 @@ export function App() {
   const providersById = useMemo(() => providerMap(providers), [providers]);
   const activeSlots = visibleSlots(mode);
   const openSlots = openTargetSlots(mode, slots);
+  const primaryZoomModifier = primaryModifierForPlatform(window.navigator.platform);
   const nativeWebviews = useTauriPanelWebviews({
     mode,
     slots,
     providersById,
     panelBodyRefs,
     suspended: Boolean(draggingProvider),
+    onPanelSelected: setSelectedSlot,
   });
+
+  useEffect(() => {
+    setSelectedSlot((current) => normalizeSelectedSlot(current, openSlots));
+  }, [mode, slots.A.provider, slots.B.provider, slots.C.provider, slots.D.provider]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -316,6 +329,19 @@ export function App() {
       if (rightCtrlDown.current && event.key === 'Enter') {
         event.preventDefault();
         sendMessage();
+        return;
+      }
+
+      const zoomAction = zoomActionFromKeyboardEvent(event, primaryZoomModifier);
+      if (zoomAction) {
+        event.preventDefault();
+        const targets = zoomTargetSlots(selectedSlot, openSlots);
+        if (targets.length) {
+          void nativeWebviews.zoomSlots(targets, zoomAction).catch((error) => {
+            console.error('Failed to zoom native webviews', error);
+            showToast('网页缩放失败');
+          });
+        }
         return;
       }
 
@@ -595,6 +621,12 @@ export function App() {
     loadProvider(slot, providerId);
   }
 
+  function onAppPointerDownCapture(event: PointerEvent<HTMLElement>) {
+    const panel = (event.target as Element).closest<HTMLElement>('.panel[data-slot]');
+    const slot = panel?.dataset.slot as SlotId | undefined;
+    setSelectedSlot(slot && slots[slot].provider && activeSlots.includes(slot) ? slot : null);
+  }
+
   function slotFromDropPoint(event: DragEvent<HTMLElement>) {
     return slotFromClientPoint(event.clientX, event.clientY);
   }
@@ -686,7 +718,10 @@ export function App() {
   }
 
   return (
-    <main className={`app ${nativeWebviews.enabled ? 'native-webviews' : ''}`}>
+    <main
+      className={`app ${nativeWebviews.enabled ? 'native-webviews' : ''}`}
+      onPointerDownCapture={onAppPointerDownCapture}
+    >
       <header className="titlebar" data-tauri-drag-region onMouseDown={startTitlebarDrag}>
         <div className="titlebar-spacer" aria-hidden="true" />
 
@@ -762,6 +797,7 @@ export function App() {
             visible={activeSlots.includes(slot)}
             auxiliary={(slot === 'C' || slot === 'D') && mode >= 3}
             dropping={dropSlot === slot}
+            selected={selectedSlot === slot}
             mode={mode}
             panelRef={(node) => {
               panelRefs.current[slot] = node;
@@ -940,6 +976,7 @@ function Panel({
   visible,
   auxiliary,
   dropping,
+  selected,
   mode,
   bodyRef,
   panelRef,
@@ -953,6 +990,7 @@ function Panel({
   visible: boolean;
   auxiliary: boolean;
   dropping: boolean;
+  selected: boolean;
   mode: Mode;
   bodyRef: (node: HTMLDivElement | null) => void;
   panelRef: (node: HTMLElement | null) => void;
@@ -962,7 +1000,9 @@ function Panel({
 }) {
   return (
     <article
-      className={`panel ${auxiliary ? 'aux' : ''} ${visible ? '' : 'hidden'} ${dropping ? 'drop' : ''}`}
+      className={`panel ${auxiliary ? 'aux' : ''} ${visible ? '' : 'hidden'} ${dropping ? 'drop' : ''} ${
+        selected ? 'selected' : ''
+      }`}
       data-slot={slot}
       ref={panelRef}
       onDragOver={onDragOver}

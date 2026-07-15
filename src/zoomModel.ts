@@ -7,6 +7,10 @@ type ZoomKeyboardEvent = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'al
 
 export const PANEL_SELECTED_EVENT = 'ai-panel-selected';
 
+export function primaryModifierForPlatform(platform: string): PrimaryModifier {
+  return platform.startsWith('Mac') ? 'metaKey' : 'ctrlKey';
+}
+
 export function panelWebviewLabel(slot: SlotId) {
   return `ai-panel-${slot.toLowerCase()}`;
 }

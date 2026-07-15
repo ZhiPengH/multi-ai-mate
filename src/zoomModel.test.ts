@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeSelectedSlot,
   panelWebviewLabel,
+  primaryModifierForPlatform,
   slotFromPanelWebviewLabel,
   zoomActionFromKeyboardEvent,
   zoomTargetSlots,
@@ -16,6 +17,12 @@ const shortcut = (key: string, overrides: Partial<KeyboardEvent> = {}) => ({
 });
 
 describe('zoom model', () => {
+  it('uses Command on macOS and Ctrl on Windows and Linux', () => {
+    expect(primaryModifierForPlatform('MacIntel')).toBe('metaKey');
+    expect(primaryModifierForPlatform('Win32')).toBe('ctrlKey');
+    expect(primaryModifierForPlatform('Linux x86_64')).toBe('ctrlKey');
+  });
+
   it('parses only supported primary-modifier zoom shortcuts', () => {
     expect(zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true }), 'metaKey')).toBe('out');
     expect(zoomActionFromKeyboardEvent(shortcut('=', { metaKey: true }), 'metaKey')).toBe('in');

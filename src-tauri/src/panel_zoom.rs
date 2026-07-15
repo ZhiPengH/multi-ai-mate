@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Mutex, MutexGuard},
+};
 use tauri::{
     webview::WebviewBuilder, AppHandle, Emitter, EventTarget, LogicalPosition, LogicalSize,
     Manager, State, Url, Webview, WebviewUrl,
@@ -66,18 +69,34 @@ pub struct PanelZoomResult {
     pub error: Option<String>,
 }
 
-#[derive(Default)]
 pub struct PanelZoomState {
-    percentages: Mutex<HashMap<String, u16>>,
+    percentages: [Mutex<u16>; 4],
+}
+
+impl Default for PanelZoomState {
+    fn default() -> Self {
+        Self {
+            percentages: std::array::from_fn(|_| Mutex::new(DEFAULT_ZOOM_PERCENT)),
+        }
+    }
 }
 
 impl PanelZoomState {
-    fn current_percent(&self, label: &str) -> Result<u16, String> {
-        let percentages = self
-            .percentages
+    fn lock_percent(&self, label: &str) -> Result<MutexGuard<'_, u16>, String> {
+        let index = panel_index(label).ok_or_else(|| format!("Invalid panel label: {label}"))?;
+        self.percentages[index]
             .lock()
-            .map_err(|_| "Zoom state lock poisoned".to_string())?;
-        Ok(*percentages.get(label).unwrap_or(&DEFAULT_ZOOM_PERCENT))
+            .map_err(|_| format!("Zoom state lock poisoned: {label}"))
+    }
+}
+
+fn panel_index(label: &str) -> Option<usize> {
+    match label {
+        "ai-panel-a" => Some(0),
+        "ai-panel-b" => Some(1),
+        "ai-panel-c" => Some(2),
+        "ai-panel-d" => Some(3),
+        _ => None,
     }
 }
 
@@ -100,6 +119,34 @@ fn next_zoom_percent(current: u16, action: ZoomAction) -> u16 {
     }
 }
 
+fn apply_zoom_percent(
+    state: &PanelZoomState,
+    label: &str,
+    action: ZoomAction,
+    set_zoom: impl FnOnce(f64) -> Result<(), String>,
+) -> Result<u16, String> {
+    let mut current = state.lock_percent(label)?;
+    let next = next_zoom_percent(*current, action);
+
+    if next != *current {
+        set_zoom(f64::from(next) / 100.0)?;
+        *current = next;
+    }
+
+    Ok(next)
+}
+
+fn restore_zoom_percent(
+    state: &PanelZoomState,
+    label: &str,
+    set_zoom: impl FnOnce(f64) -> Result<(), String>,
+) -> Result<(), String> {
+    let current = state.lock_percent(label)?;
+    let result = set_zoom(f64::from(*current) / 100.0);
+    drop(current);
+    result
+}
+
 fn valid_panel_url(value: &str) -> bool {
     value
         .parse::<Url>()
@@ -113,6 +160,13 @@ fn valid_bounds(bounds: &PanelBounds) -> bool {
         .all(f64::is_finite)
         && bounds.width > 0.0
         && bounds.height > 0.0
+}
+
+fn duplicate_panel_label(labels: &[String]) -> Option<&str> {
+    let mut seen = HashSet::with_capacity(labels.len());
+    labels
+        .iter()
+        .find_map(|label| (!seen.insert(label.as_str())).then_some(label.as_str()))
 }
 
 fn ensure_main_caller(caller: &Webview) -> Result<(), String> {
@@ -151,21 +205,9 @@ fn apply_zoom(
     let webview = app
         .get_webview(label)
         .ok_or_else(|| format!("WebView not found: {label}"))?;
-    let mut percentages = state
-        .percentages
-        .lock()
-        .map_err(|_| "Zoom state lock poisoned".to_string())?;
-    let current = *percentages.get(label).unwrap_or(&DEFAULT_ZOOM_PERCENT);
-    let next = next_zoom_percent(current, action);
-
-    if next != current {
-        webview
-            .set_zoom(f64::from(next) / 100.0)
-            .map_err(|error| error.to_string())?;
-        percentages.insert(label.to_string(), next);
-    }
-
-    Ok(next)
+    apply_zoom_percent(state, label, action, |scale| {
+        webview.set_zoom(scale).map_err(|error| error.to_string())
+    })
 }
 
 #[tauri::command]
@@ -201,10 +243,9 @@ pub async fn panel_webview_create(
             LogicalSize::new(bounds.width, bounds.height),
         )
         .map_err(|error| error.to_string())?;
-    let percent = state.current_percent(&label)?;
-    child
-        .set_zoom(f64::from(percent) / 100.0)
-        .map_err(|error| error.to_string())
+    restore_zoom_percent(&state, &label, |scale| {
+        child.set_zoom(scale).map_err(|error| error.to_string())
+    })
 }
 
 #[tauri::command]
@@ -237,6 +278,9 @@ pub fn panel_webview_zoom_many(
             return Err(format!("Invalid panel label: {label}"));
         }
     }
+    if let Some(label) = duplicate_panel_label(&labels) {
+        return Err(format!("Duplicate panel label: {label}"));
+    }
 
     Ok(labels
         .into_iter()
@@ -260,9 +304,28 @@ pub fn panel_webview_zoom_many(
 #[cfg(test)]
 mod tests {
     use super::{
-        next_zoom_percent, valid_bounds, valid_panel_label, valid_panel_url, PanelBounds,
-        ZoomAction, PANEL_INIT_SCRIPT,
+        apply_zoom_percent, duplicate_panel_label, next_zoom_percent, restore_zoom_percent,
+        valid_bounds, valid_panel_label, valid_panel_url, PanelBounds, PanelZoomState, ZoomAction,
+        PANEL_INIT_SCRIPT,
     };
+    use serde_json::Value;
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::PathBuf,
+        sync::{mpsc, Arc, Mutex},
+        thread,
+        time::Duration,
+    };
+    use tauri::utils::acl::RemoteUrlPattern;
+
+    fn read_project_json(relative_path: &str) -> Value {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_path);
+        let contents = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        serde_json::from_str(&contents)
+            .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
+    }
 
     #[test]
     fn zoom_steps_and_resets_in_ten_percent_points() {
@@ -313,6 +376,182 @@ mod tests {
             width: 800.0,
             height: 600.0,
         }));
+    }
+
+    #[test]
+    fn remote_panel_capability_grants_only_selection_and_single_zoom() {
+        let capability = read_project_json("capabilities/remote-panels.json");
+
+        assert_eq!(capability["local"], false);
+        assert!(capability.get("windows").is_none());
+        assert_eq!(capability["webviews"], serde_json::json!(["ai-panel-*"]));
+        assert_eq!(
+            capability["permissions"],
+            serde_json::json!([
+                "allow-panel-webview-select",
+                "allow-panel-webview-zoom-shortcut"
+            ])
+        );
+
+        let url_patterns = capability["remote"]["urls"]
+            .as_array()
+            .expect("remote URL patterns")
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("URL pattern string")
+                    .parse::<RemoteUrlPattern>()
+                    .expect("valid URL pattern")
+            })
+            .collect::<Vec<_>>();
+        for allowed in [
+            "http://localhost:3000/chat",
+            "https://chatgpt.com/",
+            "https://custom-provider.example/path?q=1",
+        ] {
+            let url = allowed.parse().expect("allowed URL");
+            assert!(url_patterns.iter().any(|pattern| pattern.test(&url)));
+        }
+        let file_url = "file:///tmp/panel.html".parse().expect("file URL");
+        assert!(!url_patterns.iter().any(|pattern| pattern.test(&file_url)));
+    }
+
+    #[test]
+    fn main_capability_retains_only_required_local_panel_commands() {
+        let capability = read_project_json("capabilities/default.json");
+        let app_permissions = capability["permissions"]
+            .as_array()
+            .expect("main permissions")
+            .iter()
+            .map(|value| value.as_str().expect("permission string"))
+            .filter(|permission| !permission.starts_with("core:"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            app_permissions,
+            [
+                "allow-panel-webview-reload",
+                "allow-panel-webview-focus",
+                "allow-panel-webview-send",
+                "allow-panel-webview-create",
+                "allow-panel-webview-zoom-many",
+            ]
+        );
+    }
+
+    #[test]
+    fn app_permissions_map_exactly_to_registered_panel_commands() {
+        let manifest = read_project_json("permissions/panel-commands.json");
+        let permissions = manifest["permission"]
+            .as_array()
+            .expect("app command permissions");
+        let actual = permissions
+            .iter()
+            .map(|permission| {
+                let identifier = permission["identifier"]
+                    .as_str()
+                    .expect("permission identifier");
+                let commands = permission["commands"]["allow"]
+                    .as_array()
+                    .expect("allowed commands");
+                assert_eq!(commands.len(), 1);
+                (
+                    identifier.to_string(),
+                    commands[0].as_str().expect("allowed command").to_string(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let expected = [
+            ("allow-panel-webview-create", "panel_webview_create"),
+            ("allow-panel-webview-focus", "panel_webview_focus"),
+            ("allow-panel-webview-reload", "panel_webview_reload"),
+            ("allow-panel-webview-select", "panel_webview_select"),
+            ("allow-panel-webview-send", "panel_webview_send"),
+            ("allow-panel-webview-zoom-many", "panel_webview_zoom_many"),
+            (
+                "allow-panel-webview-zoom-shortcut",
+                "panel_webview_zoom_shortcut",
+            ),
+        ]
+        .into_iter()
+        .map(|(permission, command)| (permission.to_string(), command.to_string()))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn restore_and_zoom_update_are_serialized_for_the_same_panel() {
+        let state = Arc::new(PanelZoomState::default());
+        assert_eq!(
+            apply_zoom_percent(&state, "ai-panel-a", ZoomAction::In, |_| Ok(())),
+            Ok(110)
+        );
+
+        let zoom_calls = Arc::new(Mutex::new(Vec::new()));
+        let (restore_started_tx, restore_started_rx) = mpsc::channel();
+        let (release_restore_tx, release_restore_rx) = mpsc::channel();
+        let restore_state = Arc::clone(&state);
+        let restore_calls = Arc::clone(&zoom_calls);
+        let restore_thread = thread::spawn(move || {
+            restore_zoom_percent(&restore_state, "ai-panel-a", |scale| {
+                restore_calls
+                    .lock()
+                    .expect("restore calls lock")
+                    .push(scale);
+                restore_started_tx.send(()).expect("restore started");
+                release_restore_rx
+                    .recv_timeout(Duration::from_secs(1))
+                    .expect("release restore");
+                Ok(())
+            })
+        });
+
+        restore_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("restore reached native zoom while holding the slot lock");
+
+        let (update_attempted_tx, update_attempted_rx) = mpsc::channel();
+        let (update_entered_tx, update_entered_rx) = mpsc::channel();
+        let update_state = Arc::clone(&state);
+        let update_calls = Arc::clone(&zoom_calls);
+        let update_thread = thread::spawn(move || {
+            update_attempted_tx.send(()).expect("update attempted");
+            apply_zoom_percent(&update_state, "ai-panel-a", ZoomAction::In, |scale| {
+                update_calls.lock().expect("update calls lock").push(scale);
+                update_entered_tx.send(()).expect("update entered");
+                Ok(())
+            })
+        });
+
+        update_attempted_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("update thread started");
+        assert!(
+            update_entered_rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_err(),
+            "same-panel update entered while restore still owned the serial boundary"
+        );
+
+        release_restore_tx.send(()).expect("release restore");
+        assert_eq!(restore_thread.join().expect("restore thread"), Ok(()));
+        assert_eq!(update_thread.join().expect("update thread"), Ok(120));
+        assert_eq!(*zoom_calls.lock().expect("zoom calls lock"), vec![1.1, 1.2]);
+    }
+
+    #[test]
+    fn duplicate_panel_labels_are_detected_before_batch_zoom() {
+        let unique = vec!["ai-panel-a".to_string(), "ai-panel-b".to_string()];
+        assert_eq!(duplicate_panel_label(&unique), None);
+
+        let duplicate = vec![
+            "ai-panel-a".to_string(),
+            "ai-panel-b".to_string(),
+            "ai-panel-a".to_string(),
+        ];
+        assert_eq!(duplicate_panel_label(&duplicate), Some("ai-panel-a"));
     }
 
     #[test]

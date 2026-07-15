@@ -14,6 +14,11 @@
     "core:webview:allow-webview-show",
     "core:webview:allow-set-webview-position",
     "core:webview:allow-set-webview-size",
-    "core:webview:allow-set-webview-focus"
+    "core:webview:allow-set-webview-focus",
+    "allow-panel-webview-reload",
+    "allow-panel-webview-focus",
+    "allow-panel-webview-send",
+    "allow-panel-webview-create",
+    "allow-panel-webview-zoom-many"
   ]
 }

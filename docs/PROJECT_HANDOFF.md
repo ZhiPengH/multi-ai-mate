@@ -17,6 +17,8 @@ The main product UI is now largely complete:
 - AI webpages support selected/global `Command + -`, `Command + +`/`=`, and `Command + 0` zoom controls.
 - Clicking inside an AI webpage visibly highlights only the selected panel; shortcuts target that panel until selection is cleared.
 - AI webpage zoom does not scale the title bar, dock, panel geometry, or composer.
+- Panel WebView replacement is recoverable: failed closes remain tracked and hidden for retry, while native same-label creation closes the old WebView before creating the requested URL.
+- Delayed native selection events from panels that are no longer open and visible are ignored.
 - Window layout now resizes with the app window.
 - Portrait monitor layout is supported:
   - 2 AI: panels stack vertically.
@@ -39,8 +41,8 @@ For Codex or another agent starting a fresh conversation in this repository:
 ## Important Branches And Tags
 
 - Active branch: `codex/newUI`
-- Current local HEAD is the latest handoff status correction immediately after `c893d47`.
-- Including this correction, `codex/newUI` is 14 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- Current local HEAD is the lifecycle-hardening commit immediately after `d9d2fb8`.
+- Including this lifecycle hardening, `codex/newUI` is 15 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
 - Historical handoff commit `b120662` was the reviewed HEAD when the branch was 12 commits ahead; it is no longer the current HEAD.
 - The AI webpage zoom implementation and all handoff status corrections have not been pushed.
 - Latest pushed tag: `v0.1.2`
@@ -56,7 +58,7 @@ For Codex or another agent starting a fresh conversation in this repository:
 
 - `AGENTS.md` is an unrelated pre-existing dirty file. Do not include it in product commits unless the user explicitly asks.
 - `.superpowers/` is untracked and contains this round's task coordination briefs and reports; it is intentionally not committed.
-- Current local HEAD is the latest handoff status correction immediately after `c893d47`. Including this correction, `codex/newUI` is 14 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- Current local HEAD is the lifecycle-hardening commit immediately after `d9d2fb8`. Including this change, `codex/newUI` is 15 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
 - For historical context, `b120662` was 12 commits ahead at the first handoff review; it is not the current branch status.
 
 ## Main Files To Know
@@ -75,7 +77,7 @@ For Codex or another agent starting a fresh conversation in this repository:
 
 - `src/zoomModel.ts`
   - Pure AI webpage zoom helpers.
-  - Shortcut parsing, selected/global routing, stepping, reset, and 50%–200% bounds.
+  - Shortcut parsing, panel label mapping, selected/global target routing, and selection normalization.
 
 - `src/useTauriPanelWebviews.ts`
   - Native Tauri WebView sync.
@@ -83,7 +85,8 @@ For Codex or another agent starting a fresh conversation in this repository:
 
 - `src-tauri/src/panel_zoom.rs`
   - Native AI panel selection and zoom controller.
-  - Validates panel commands, injects remote-page listeners, and serializes lifecycle updates.
+  - Owns percentage state, 10% steps, reset, and 50%–200% bounds.
+  - Validates panel commands, injects remote-page listeners, and replaces existing same-label WebViews before creation.
 
 - `src-tauri/tauri.conf.json`
   - Main Tauri app config.

@@ -2,16 +2,24 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Webview as TauriWebview } from '@tauri-apps/api/webview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Mode, normalizeProviderUrl, SlotId, SLOT_ORDER, visibleSlots } from './appModel';
 import {
+  Mode,
+  normalizeProviderUrl,
+  openTargetSlots,
+  SlotId,
+  SLOT_ORDER,
+  visibleSlots,
+} from './appModel';
+import {
+  closeTrackedPanelWebview,
   createPanelSyncCoordinator,
+  createPanelSelectionHandler,
   reclaimStalePanelWebview,
   type PanelSyncCoordinator,
 } from './panelWebviewSync';
 import {
   PANEL_SELECTED_EVENT,
   panelWebviewLabel,
-  slotFromPanelWebviewLabel,
   type ZoomAction,
 } from './zoomModel';
 
@@ -79,6 +87,8 @@ export function useTauriPanelWebviews({
 }: TauriPanelWebviewsOptions): TauriPanelWebviewControls {
   const [enabled, setEnabled] = useState(false);
   const webviewsRef = useRef(new Map<SlotId, NativeWebviewEntry>());
+  const openSlotsRef = useRef<readonly SlotId[]>([]);
+  openSlotsRef.current = openTargetSlots(mode, slots);
   const syncCoordinatorRef = useRef<PanelSyncCoordinator | null>(null);
   if (!syncCoordinatorRef.current) syncCoordinatorRef.current = createPanelSyncCoordinator();
 
@@ -90,10 +100,13 @@ export function useTauriPanelWebviews({
     if (!enabled) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    const handleSelection = createPanelSelectionHandler(
+      () => openSlotsRef.current,
+      (slot) => onPanelSelected?.(slot),
+    );
 
     void listen<string>(PANEL_SELECTED_EVENT, (event) => {
-      const slot = slotFromPanelWebviewLabel(event.payload);
-      if (!disposed && slot) onPanelSelected?.(slot);
+      if (!disposed) handleSelection(event.payload);
     }).then((dispose) => {
       if (disposed) dispose();
       else unlisten = dispose;
@@ -131,8 +144,7 @@ export function useTauriPanelWebviews({
 
         if (!provider) {
           if (existing) {
-            webviewsRef.current.delete(slot);
-            await existing.webview.close().catch(() => undefined);
+            await closeTrackedPanelWebview(webviewsRef.current, slot, existing);
           }
           continue;
         }
@@ -144,8 +156,7 @@ export function useTauriPanelWebviews({
         const bounds = panelBounds(element);
 
         if (existing && (existing.providerId !== provider.id || existing.url !== url)) {
-          webviewsRef.current.delete(slot);
-          await existing.webview.close().catch(() => undefined);
+          await closeTrackedPanelWebview(webviewsRef.current, slot, existing);
         }
 
         const current = webviewsRef.current.get(slot);
@@ -204,10 +215,11 @@ export function useTauriPanelWebviews({
 
   useEffect(() => {
     return () => {
-      webviewsRef.current.forEach((entry) => {
-        entry.webview.close().catch(() => undefined);
+      webviewsRef.current.forEach((entry, slot) => {
+        closeTrackedPanelWebview(webviewsRef.current, slot, entry).catch((error) => {
+          console.error('Failed to close Tauri webview', error);
+        });
       });
-      webviewsRef.current.clear();
     };
   }, []);
 

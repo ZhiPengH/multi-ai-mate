@@ -192,6 +192,17 @@ fn emit_selected(caller: &Webview, label: &str) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn replace_existing_panel_webview<T>(
+    existing: Option<T>,
+    close_existing: impl FnOnce(T) -> Result<(), String>,
+    create: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if let Some(existing) = existing {
+        close_existing(existing)?;
+    }
+    create()
+}
+
 fn apply_zoom(
     app: &AppHandle,
     state: &PanelZoomState,
@@ -228,24 +239,26 @@ pub async fn panel_webview_create(
     if !valid_bounds(&bounds) {
         return Err("Invalid panel bounds".to_string());
     }
-    if caller.get_webview(&label).is_some() {
-        return Ok(());
-    }
-
     let parsed_url = url.parse::<Url>().map_err(|error| error.to_string())?;
-    let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(parsed_url))
-        .initialization_script(PANEL_INIT_SCRIPT);
-    let child = caller
-        .window()
-        .add_child(
-            builder,
-            LogicalPosition::new(bounds.x, bounds.y),
-            LogicalSize::new(bounds.width, bounds.height),
-        )
-        .map_err(|error| error.to_string())?;
-    restore_zoom_percent(&state, &label, |scale| {
-        child.set_zoom(scale).map_err(|error| error.to_string())
-    })
+    replace_existing_panel_webview(
+        caller.get_webview(&label),
+        |existing| existing.close().map_err(|error| error.to_string()),
+        || {
+            let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(parsed_url))
+                .initialization_script(PANEL_INIT_SCRIPT);
+            let child = caller
+                .window()
+                .add_child(
+                    builder,
+                    LogicalPosition::new(bounds.x, bounds.y),
+                    LogicalSize::new(bounds.width, bounds.height),
+                )
+                .map_err(|error| error.to_string())?;
+            restore_zoom_percent(&state, &label, |scale| {
+                child.set_zoom(scale).map_err(|error| error.to_string())
+            })
+        },
+    )
 }
 
 #[tauri::command]
@@ -305,8 +318,8 @@ pub fn panel_webview_zoom_many(
 mod tests {
     use super::{
         apply_zoom_percent, duplicate_panel_label, next_zoom_percent, restore_zoom_percent,
-        valid_bounds, valid_panel_label, valid_panel_url, PanelBounds, PanelZoomState, ZoomAction,
-        PANEL_INIT_SCRIPT,
+        replace_existing_panel_webview, valid_bounds, valid_panel_label, valid_panel_url,
+        PanelBounds, PanelZoomState, ZoomAction, PANEL_INIT_SCRIPT,
     };
     use serde_json::Value;
     use std::{
@@ -376,6 +389,52 @@ mod tests {
             width: 800.0,
             height: 600.0,
         }));
+    }
+
+    #[test]
+    fn existing_panel_is_replaced_and_close_errors_stop_creation() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = replace_existing_panel_webview(
+            Some("old"),
+            |existing| {
+                events.borrow_mut().push(format!("close:{existing}"));
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("create".to_string());
+                Ok(())
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(*events.borrow(), ["close:old", "create"]);
+
+        let mut create_without_existing = false;
+        assert_eq!(
+            replace_existing_panel_webview(
+                Option::<&str>::None,
+                |_| panic!("no existing panel should be closed"),
+                || {
+                    create_without_existing = true;
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert!(create_without_existing);
+
+        let mut created_after_failure = false;
+        assert_eq!(
+            replace_existing_panel_webview(
+                Some("old"),
+                |_| Err("close failed".to_string()),
+                || {
+                    created_after_failure = true;
+                    Ok(())
+                },
+            ),
+            Err("close failed".to_string())
+        );
+        assert!(!created_after_failure);
     }
 
     #[test]

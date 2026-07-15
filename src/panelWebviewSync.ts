@@ -1,3 +1,6 @@
+import type { SlotId } from './appModel';
+import { slotFromPanelWebviewLabel } from './zoomModel';
+
 export type PanelSyncGeneration = {
   isCurrent: () => boolean;
   invalidate: () => void;
@@ -38,6 +41,36 @@ export function createPanelSyncCoordinator(): PanelSyncCoordinator {
 type ClosablePanelWebview = {
   close: () => Promise<unknown>;
 };
+
+type TrackedPanelWebviewEntry = {
+  webview: ClosablePanelWebview & {
+    hide: () => Promise<unknown>;
+  };
+};
+
+export async function closeTrackedPanelWebview<Key, Entry extends TrackedPanelWebviewEntry>(
+  entries: Map<Key, Entry>,
+  key: Key,
+  entry: Entry,
+): Promise<void> {
+  try {
+    await entry.webview.close();
+  } catch (error) {
+    await entry.webview.hide().catch(() => undefined);
+    throw error;
+  }
+  if (entries.get(key) === entry) entries.delete(key);
+}
+
+export function createPanelSelectionHandler(
+  latestOpenSlots: () => readonly SlotId[],
+  onPanelSelected: (slot: SlotId) => void,
+): (label: string) => void {
+  return (label) => {
+    const slot = slotFromPanelWebviewLabel(label);
+    if (slot && latestOpenSlots().includes(slot)) onPanelSelected(slot);
+  };
+}
 
 export function reclaimStalePanelWebview(
   webview: ClosablePanelWebview,

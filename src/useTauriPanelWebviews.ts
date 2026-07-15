@@ -1,7 +1,14 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { Webview as TauriWebview } from '@tauri-apps/api/webview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Mode, normalizeProviderUrl, SlotId, SLOT_ORDER, visibleSlots } from './appModel';
+import {
+  PANEL_SELECTED_EVENT,
+  panelWebviewLabel,
+  slotFromPanelWebviewLabel,
+  type ZoomAction,
+} from './zoomModel';
 
 type ProviderLike = {
   id: string;
@@ -24,6 +31,13 @@ type TauriPanelWebviewsOptions = {
   providersById: Record<string, ProviderLike | undefined>;
   panelBodyRefs: React.MutableRefObject<Record<SlotId, HTMLDivElement | null>>;
   suspended: boolean;
+  onPanelSelected?: (slot: SlotId) => void;
+};
+
+export type NativeZoomResult = {
+  label: string;
+  percent: number | null;
+  error: string | null;
 };
 
 export type TauriPanelWebviewControls = {
@@ -31,6 +45,7 @@ export type TauriPanelWebviewControls = {
   focusSlot: (slot: SlotId) => Promise<void>;
   reloadSlots: (slots: SlotId[]) => Promise<void>;
   sendToSlots: (slots: SlotId[], text: string, autoSubmit?: boolean) => Promise<void>;
+  zoomSlots: (targetSlots: SlotId[], action: ZoomAction) => Promise<NativeZoomResult[]>;
 };
 
 type NativeSendResult = {
@@ -38,10 +53,6 @@ type NativeSendResult = {
   reason?: string;
   submitted?: boolean;
 };
-
-function webviewLabel(slot: SlotId) {
-  return `ai-panel-${slot.toLowerCase()}`;
-}
 
 function panelBounds(element: HTMLElement) {
   const rect = element.getBoundingClientRect();
@@ -59,6 +70,7 @@ export function useTauriPanelWebviews({
   providersById,
   panelBodyRefs,
   suspended,
+  onPanelSelected,
 }: TauriPanelWebviewsOptions): TauriPanelWebviewControls {
   const [enabled, setEnabled] = useState(false);
   const webviewsRef = useRef(new Map<SlotId, NativeWebviewEntry>());
@@ -69,19 +81,36 @@ export function useTauriPanelWebviews({
 
   useEffect(() => {
     if (!enabled) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<string>(PANEL_SELECTED_EVENT, (event) => {
+      const slot = slotFromPanelWebviewLabel(event.payload);
+      if (!disposed && slot) onPanelSelected?.(slot);
+    }).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [enabled, onPanelSelected]);
+
+  useEffect(() => {
+    if (!enabled) return;
 
     let disposed = false;
 
     async function syncWebviews() {
-      const [{ Webview }, { getCurrentWindow }, { LogicalPosition, LogicalSize }] = await Promise.all([
+      const [{ Webview }, { LogicalPosition, LogicalSize }] = await Promise.all([
         import('@tauri-apps/api/webview'),
-        import('@tauri-apps/api/window'),
         import('@tauri-apps/api/dpi'),
       ]);
 
       if (disposed) return;
 
-      const currentWindow = getCurrentWindow();
       const activeSlots = new Set(visibleSlots(mode));
 
       for (const slot of SLOT_ORDER) {
@@ -116,10 +145,10 @@ export function useTauriPanelWebviews({
           continue;
         }
 
-        const webview = new Webview(currentWindow, webviewLabel(slot), {
-          url,
-          ...bounds,
-        });
+        const label = panelWebviewLabel(slot);
+        await invoke('panel_webview_create', { label, url, bounds });
+        const webview = await Webview.getByLabel(label);
+        if (!webview) throw new Error(`Created WebView not found: ${label}`);
 
         webviewsRef.current.set(slot, {
           providerId: provider.id,
@@ -168,7 +197,7 @@ export function useTauriPanelWebviews({
   const focusSlot = useCallback(
     async (slot: SlotId) => {
       if (!enabled) return;
-      await invoke('panel_webview_focus', { label: webviewLabel(slot) });
+      await invoke('panel_webview_focus', { label: panelWebviewLabel(slot) });
     },
     [enabled],
   );
@@ -179,7 +208,7 @@ export function useTauriPanelWebviews({
       await Promise.all(
         targetSlots
           .filter((slot) => webviewsRef.current.has(slot))
-          .map((slot) => invoke('panel_webview_reload', { label: webviewLabel(slot) })),
+          .map((slot) => invoke('panel_webview_reload', { label: panelWebviewLabel(slot) })),
       );
     },
     [enabled],
@@ -193,7 +222,7 @@ export function useTauriPanelWebviews({
           .filter((slot) => webviewsRef.current.has(slot))
           .map(async (slot) => {
             const raw = await invoke<string>('panel_webview_send', {
-              label: webviewLabel(slot),
+              label: panelWebviewLabel(slot),
               text,
               autoSubmit,
             });
@@ -215,13 +244,30 @@ export function useTauriPanelWebviews({
     [enabled],
   );
 
+  const zoomSlots = useCallback(
+    async (targetSlots: SlotId[], action: ZoomAction) => {
+      if (!enabled) return [];
+      const labels = targetSlots
+        .filter((slot) => webviewsRef.current.has(slot))
+        .map(panelWebviewLabel);
+      const results = await invoke<NativeZoomResult[]>('panel_webview_zoom_many', { labels, action });
+      const failures = results.filter((result) => result.error);
+      if (failures.length) {
+        throw new Error(failures.map((result) => `${result.label}: ${result.error}`).join('; '));
+      }
+      return results;
+    },
+    [enabled],
+  );
+
   return useMemo(
     () => ({
       enabled,
       focusSlot,
       reloadSlots,
       sendToSlots,
+      zoomSlots,
     }),
-    [enabled, focusSlot, reloadSlots, sendToSlots],
+    [enabled, focusSlot, reloadSlots, sendToSlots, zoomSlots],
   );
 }

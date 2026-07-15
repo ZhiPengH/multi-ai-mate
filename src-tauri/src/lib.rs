@@ -7,10 +7,15 @@ use std::time::Duration;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(panel_zoom::PanelZoomState::default())
     .invoke_handler(tauri::generate_handler![
       panel_webview_reload,
       panel_webview_focus,
       panel_webview_send,
+      panel_zoom::panel_webview_create,
+      panel_zoom::panel_webview_select,
+      panel_zoom::panel_webview_zoom_shortcut,
+      panel_zoom::panel_webview_zoom_many,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

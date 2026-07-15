@@ -43,10 +43,12 @@ For Codex or another agent starting a fresh conversation in this repository:
 ## Important Branches And Tags
 
 - Active branch: `codex/newUI`
-- Current local HEAD is the stale-WebView recovery commit immediately after `c78ffef`.
-- Including this stale-WebView recovery, `codex/newUI` is 16 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- Product implementation commit: `fd9bcea` (`fix: recover stale panel WebViews`).
+- Current branch HEAD is the publish-status handoff commit immediately after `fd9bcea`.
+- Local and remote `codex/newUI` are synchronized after this handoff is pushed.
+- Draft PR: `https://github.com/ZhiPengH/multi-ai-mate/pull/1`, targeting `main`.
+- Local `main` has been fast-forwarded through this handoff commit; `origin/main` has not been changed.
 - Historical handoff commit `b120662` was the reviewed HEAD when the branch was 12 commits ahead; it is no longer the current HEAD.
-- The AI webpage zoom implementation and all handoff status corrections have not been pushed.
 - Latest pushed tag: `v0.1.2`
 - Main local zoom commits:
   - `b120662` - Update the AI webpage zoom handoff.
@@ -60,7 +62,7 @@ For Codex or another agent starting a fresh conversation in this repository:
 
 - `AGENTS.md` is an unrelated pre-existing dirty file. Do not include it in product commits unless the user explicitly asks.
 - `.superpowers/` is untracked and contains this round's task coordination briefs and reports; it is intentionally not committed.
-- Current local HEAD is the stale-WebView recovery commit immediately after `c78ffef`. Including this change, `codex/newUI` is 16 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- The working checkout remains on `codex/newUI` so Draft PR #1 can be iterated. Local `main` points to the same publish-status commit, while `origin/main` remains unchanged.
 - For historical context, `b120662` was 12 commits ahead at the first handoff review; it is not the current branch status.
 
 ## Main Files To Know
@@ -197,6 +199,6 @@ The Homebrew Rust on this machine may be older than some current Tauri dependenc
 
 1. Treat the focused desktop zoom sequence as complete: all 10 required checks passed in `release/Multi AI Mate.app` with ChatGPT and DeepSeek.
 2. Run a broader provider regression covering drag/drop, selection, zoom, and reset with ChatGPT, Claude, Gemini, and one Chinese provider.
-3. Confirm `Right Ctrl + Enter` sends quickly.
-4. Trigger or inspect GitHub Actions for `v0.1.2` to confirm Windows artifacts are generated.
-5. If the UI is accepted, merge `codex/newUI` into the main release branch.
+3. Review Draft PR #1 and merge it remotely when the change is ready for `origin/main`.
+4. Confirm `Right Ctrl + Enter` sends quickly.
+5. Trigger or inspect GitHub Actions for `v0.1.2` to confirm Windows artifacts are generated.

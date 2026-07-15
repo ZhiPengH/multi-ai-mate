@@ -39,9 +39,10 @@ For Codex or another agent starting a fresh conversation in this repository:
 ## Important Branches And Tags
 
 - Active branch: `codex/newUI`
-- Current local HEAD before this status correction: `b120662` (`docs: update AI webpage zoom handoff`).
-- At `b120662`, local `codex/newUI` is 12 commits ahead of `origin/codex/newUI` and 0 commits behind.
-- The AI webpage zoom implementation and handoff commits have not been pushed.
+- Current local HEAD is the latest handoff status correction immediately after `c893d47`.
+- Including this correction, `codex/newUI` is 14 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- Historical handoff commit `b120662` was the reviewed HEAD when the branch was 12 commits ahead; it is no longer the current HEAD.
+- The AI webpage zoom implementation and all handoff status corrections have not been pushed.
 - Latest pushed tag: `v0.1.2`
 - Main local zoom commits:
   - `b120662` - Update the AI webpage zoom handoff.
@@ -55,7 +56,8 @@ For Codex or another agent starting a fresh conversation in this repository:
 
 - `AGENTS.md` is an unrelated pre-existing dirty file. Do not include it in product commits unless the user explicitly asks.
 - `.superpowers/` is untracked and contains this round's task coordination briefs and reports; it is intentionally not committed.
-- At handoff commit `b120662`, local `codex/newUI` is ahead of `origin/codex/newUI` by 12 commits. The zoom implementation and handoff remain local and unpushed.
+- Current local HEAD is the latest handoff status correction immediately after `c893d47`. Including this correction, `codex/newUI` is 14 commits ahead of `origin/codex/newUI`, 0 behind, and remains unpushed.
+- For historical context, `b120662` was 12 commits ahead at the first handoff review; it is not the current branch status.
 
 ## Main Files To Know
 

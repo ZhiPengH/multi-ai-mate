@@ -1,0 +1,19 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Multi AI Mate",
+        "width": 1440,
+        "height": 1000,
+        "minWidth": 960,
+        "minHeight": 680,
+        "transparent": false,
+        "decorations": true,
+        "shadow": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}

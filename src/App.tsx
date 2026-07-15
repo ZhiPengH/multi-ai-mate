@@ -3,24 +3,30 @@ import {
   ChevronDown,
   Moon,
   Paperclip,
-  RefreshCw,
   SendHorizontal,
   Sun,
   Trash2,
-  X,
 } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ChangeEvent, DragEvent, KeyboardEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, KeyboardEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  EMPTY_COMPOSER_MESSAGE,
   Mode,
   normalizeProviderUrl,
   openTargetSlots,
+  slotAtPoint,
   SlotId,
   SLOT_ORDER,
   visibleSlots,
 } from './appModel';
 import { useTauriPanelWebviews } from './useTauriPanelWebviews';
+import {
+  normalizeSelectedSlot,
+  primaryModifierForPlatform,
+  zoomActionFromKeyboardEvent,
+  zoomTargetSlots,
+} from './zoomModel';
 
 type SlotStatus = 'ready' | 'loading' | 'empty';
 type Theme = 'light' | 'dark';
@@ -49,6 +55,12 @@ type Message = {
   provider?: string;
   text?: string;
   loading?: boolean;
+};
+
+type PointerDragState = {
+  providerId: string;
+  x: number;
+  y: number;
 };
 
 const BASE_PROVIDERS: Provider[] = [
@@ -137,11 +149,6 @@ type PersistedWorkspace = {
 };
 
 const starterMessages = (provider: string): Message[] => [
-  {
-    id: crypto.randomUUID(),
-    role: 'user',
-    text: '帮我分别从产品、写作和工程角度分析这个想法',
-  },
   {
     id: crypto.randomUUID(),
     role: 'ai',
@@ -238,16 +245,25 @@ export function App() {
   });
   const [draggingProvider, setDraggingProvider] = useState<string | null>(null);
   const [dropSlot, setDropSlot] = useState<SlotId | null>(null);
-  const [message, setMessage] = useState('帮我分别从产品、写作和工程角度分析这个想法');
+  const [pointerDrag, setPointerDrag] = useState<PointerDragState | null>(null);
+  const [message, setMessage] = useState(EMPTY_COMPOSER_MESSAGE);
   const [toast, setToast] = useState<{ text: string; spinning?: boolean } | null>(null);
   const [isCustomOpen, setIsCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [customIcon, setCustomIcon] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SlotId | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const rightCtrlDown = useRef(false);
   const panelBodyRefs = useRef<Record<SlotId, HTMLDivElement | null>>({
+    A: null,
+    B: null,
+    C: null,
+    D: null,
+  });
+  const panelRefs = useRef<Record<SlotId, HTMLElement | null>>({
     A: null,
     B: null,
     C: null,
@@ -256,13 +272,19 @@ export function App() {
   const providersById = useMemo(() => providerMap(providers), [providers]);
   const activeSlots = visibleSlots(mode);
   const openSlots = openTargetSlots(mode, slots);
+  const primaryZoomModifier = primaryModifierForPlatform(window.navigator.platform);
   const nativeWebviews = useTauriPanelWebviews({
     mode,
     slots,
     providersById,
     panelBodyRefs,
     suspended: Boolean(draggingProvider),
+    onPanelSelected: setSelectedSlot,
   });
+
+  useEffect(() => {
+    setSelectedSlot((current) => normalizeSelectedSlot(current, openSlots));
+  }, [mode, slots.A.provider, slots.B.provider, slots.C.provider, slots.D.provider]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -299,14 +321,61 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.code === 'ControlRight') {
+        rightCtrlDown.current = true;
+        return;
+      }
+
+      if (rightCtrlDown.current && event.key === 'Enter') {
+        event.preventDefault();
+        sendMessage();
+        return;
+      }
+
+      const zoomAction = zoomActionFromKeyboardEvent(event, primaryZoomModifier);
+      if (zoomAction) {
+        event.preventDefault();
+        const targets = zoomTargetSlots(selectedSlot, openSlots);
+        if (targets.length) {
+          void nativeWebviews.zoomSlots(targets, zoomAction).catch((error) => {
+            console.error('Failed to zoom native webviews', error);
+            showToast('网页缩放失败');
+          });
+        }
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault();
         refreshAllOpen();
+        return;
+      }
+
+      const shortcutSlot = slotFromDigitCode(event.code);
+      if (!shortcutSlot) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
+        event.preventDefault();
+        reloadSlot(shortcutSlot);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.altKey) {
+        event.preventDefault();
+        closeSlot(shortcutSlot);
       }
     };
 
+    const onKeyUp = (event: globalThis.KeyboardEvent) => {
+      if (event.code === 'ControlRight') rightCtrlDown.current = false;
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   });
 
   useEffect(() => {
@@ -390,7 +459,7 @@ export function App() {
         });
         return next;
       });
-      showToast(`已刷新 ${targets.join(' · ')}`);
+      showToast(`已刷新 ${targets.length} 个面板`);
     }, 900);
   }
 
@@ -436,11 +505,11 @@ export function App() {
     });
 
     setMessage('');
-    showToast(`正在发送至 ${openSlots.join(' · ')}`, true);
+    showToast(`正在发送至 ${openSlots.length} 个 AI`, true);
     void nativeWebviews
       .sendToSlots(openSlots, text, true)
       .then(() => {
-        showToast(`已发送至 ${openSlots.join(' · ')}`);
+        showToast(`已发送至 ${openSlots.length} 个 AI`);
       })
       .catch((error) => {
         console.error('Failed to send message to native webviews', error);
@@ -458,8 +527,16 @@ export function App() {
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
+      event.stopPropagation();
       sendMessage();
     }
+  }
+
+  function slotFromDigitCode(code: string): SlotId | null {
+    const match = code.match(/^Digit([1-4])$/);
+    if (!match) return null;
+    const slot = SLOT_ORDER[Number(match[1]) - 1];
+    return activeSlots.includes(slot) ? slot : null;
   }
 
   function startTitlebarDrag(event: MouseEvent<HTMLElement>) {
@@ -484,11 +561,90 @@ export function App() {
     setDropSlot(null);
   }
 
+  function slotFromClientPoint(x: number, y: number) {
+    const rects = activeSlots
+      .map((slot) => {
+        const rect = panelRefs.current[slot]?.getBoundingClientRect();
+        return rect
+          ? {
+              slot,
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+            }
+          : null;
+      })
+      .filter((rect): rect is NonNullable<typeof rect> => Boolean(rect));
+
+    return slotAtPoint(rects, x, y);
+  }
+
+  function onProviderPointerDown(providerId: string, event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+
+    setDraggingProvider(providerId);
+    setPointerDrag({ providerId, x: event.clientX, y: event.clientY });
+
+    const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+      setPointerDrag((current) =>
+        current?.providerId === providerId ? { providerId, x: moveEvent.clientX, y: moveEvent.clientY } : current,
+      );
+      setDropSlot(slotFromClientPoint(moveEvent.clientX, moveEvent.clientY));
+    };
+
+    const finishPointerDrag = (upEvent: globalThis.PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', finishPointerDrag);
+      window.removeEventListener('pointercancel', finishPointerDrag);
+
+      const slot = slotFromClientPoint(upEvent.clientX, upEvent.clientY);
+      setPointerDrag(null);
+      setDraggingProvider(null);
+      setDropSlot(null);
+
+      if (!slot || !providersById[providerId]) return;
+      loadProvider(slot, providerId);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', finishPointerDrag);
+    window.addEventListener('pointercancel', finishPointerDrag);
+  }
+
   function onPanelDrop(slot: SlotId, event: DragEvent<HTMLElement>) {
     event.preventDefault();
     const providerId = event.dataTransfer.getData('text/plain');
     setDropSlot(null);
     if (!providersById[providerId]) return;
+    loadProvider(slot, providerId);
+  }
+
+  function onAppPointerDownCapture(event: PointerEvent<HTMLElement>) {
+    const panel = (event.target as Element).closest<HTMLElement>('.panel[data-slot]');
+    const slot = panel?.dataset.slot as SlotId | undefined;
+    setSelectedSlot(slot && slots[slot].provider && activeSlots.includes(slot) ? slot : null);
+  }
+
+  function slotFromDropPoint(event: DragEvent<HTMLElement>) {
+    return slotFromClientPoint(event.clientX, event.clientY);
+  }
+
+  function onWorkspaceDragOver(event: DragEvent<HTMLElement>) {
+    if (!draggingProvider) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDropSlot(slotFromDropPoint(event));
+  }
+
+  function onWorkspaceDrop(event: DragEvent<HTMLElement>) {
+    if (!draggingProvider) return;
+    event.preventDefault();
+    const providerId = event.dataTransfer.getData('text/plain') || draggingProvider;
+    const slot = slotFromDropPoint(event);
+    setDropSlot(null);
+    if (!slot || !providersById[providerId]) return;
     loadProvider(slot, providerId);
   }
 
@@ -562,7 +718,10 @@ export function App() {
   }
 
   return (
-    <main className={`app ${nativeWebviews.enabled ? 'native-webviews' : ''}`}>
+    <main
+      className={`app ${nativeWebviews.enabled ? 'native-webviews' : ''}`}
+      onPointerDownCapture={onAppPointerDownCapture}
+    >
       <header className="titlebar" data-tauri-drag-region onMouseDown={startTitlebarDrag}>
         <div className="titlebar-spacer" aria-hidden="true" />
 
@@ -573,7 +732,7 @@ export function App() {
 
         <div className="title-right" data-no-drag>
           <nav className="modes" aria-label="AI mode">
-            <span className="thumb" style={{ transform: `translateX(${(mode - 1) * 52}px)` }} />
+            <span className="thumb" style={{ transform: `translateX(${(mode - 1) * 92}px)` }} />
             {([1, 2, 3, 4] as Mode[]).map((item) => (
               <button
                 className="mode-btn"
@@ -607,6 +766,7 @@ export function App() {
               draggingProvider={draggingProvider}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
+              onPointerDown={onProviderPointerDown}
             />
           ))}
           <div className="dock-sep" />
@@ -623,7 +783,6 @@ export function App() {
             onDrop={onTrashDrop}
           >
             <span className="glyph">{draggingProvider ? <Trash2 /> : '+'}</span>
-            <span className="tip">{draggingProvider ? '拖到此处删除自定义 AI' : '添加自定义 AI'}</span>
           </button>
         </div>
       </aside>
@@ -638,9 +797,11 @@ export function App() {
             visible={activeSlots.includes(slot)}
             auxiliary={(slot === 'C' || slot === 'D') && mode >= 3}
             dropping={dropSlot === slot}
+            selected={selectedSlot === slot}
             mode={mode}
-            onClose={() => closeSlot(slot)}
-            onReload={() => reloadSlot(slot)}
+            panelRef={(node) => {
+              panelRefs.current[slot] = node;
+            }}
             bodyRef={(node) => {
               panelBodyRefs.current[slot] = node;
             }}
@@ -655,6 +816,17 @@ export function App() {
             onDrop={(event) => onPanelDrop(slot, event)}
           />
         ))}
+        {draggingProvider && (
+          <div
+            className="workspace-drop-layer"
+            aria-hidden="true"
+            onDragOver={onWorkspaceDragOver}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropSlot(null);
+            }}
+            onDrop={onWorkspaceDrop}
+          />
+        )}
       </section>
 
       <footer className="composer">
@@ -686,6 +858,10 @@ export function App() {
           {toast.spinning && <span className="spin" />}
           {toast.text}
         </div>
+      )}
+
+      {pointerDrag?.providerId && providersById[pointerDrag.providerId] && (
+        <DragGhost provider={providersById[pointerDrag.providerId]} x={pointerDrag.x} y={pointerDrag.y} />
       )}
 
       {isCustomOpen && (
@@ -750,11 +926,13 @@ function ProviderTile({
   draggingProvider,
   onDragStart,
   onDragEnd,
+  onPointerDown,
 }: {
   provider: Provider;
   draggingProvider: string | null;
   onDragStart: (providerId: string, event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onPointerDown: (providerId: string, event: PointerEvent<HTMLElement>) => void;
 }) {
   const solo = !provider.icon && [...provider.glyph].length === 1;
 
@@ -768,13 +946,25 @@ function ProviderTile({
       style={{ '--g': provider.hue } as React.CSSProperties}
       onDragStart={(event) => onDragStart(provider.id, event)}
       onDragEnd={onDragEnd}
+      onPointerDown={(event) => onPointerDown(provider.id, event)}
     >
       {provider.icon ? (
         <img className="glyph ico" src={provider.icon} alt={provider.name} draggable={false} />
       ) : (
         <span className="glyph">{provider.glyph}</span>
       )}
-      <span className="tip">{provider.name}</span>
+    </div>
+  );
+}
+
+function DragGhost({ provider, x, y }: { provider: Provider; x: number; y: number }) {
+  return (
+    <div className="drag-ghost" style={{ transform: `translate3d(${x}px, ${y}px, 0)` }}>
+      {provider.icon ? (
+        <img src={provider.icon} alt="" draggable={false} />
+      ) : (
+        <span className={provider.cjk ? 'cjk' : ''}>{provider.glyph}</span>
+      )}
     </div>
   );
 }
@@ -786,10 +976,10 @@ function Panel({
   visible,
   auxiliary,
   dropping,
+  selected,
   mode,
-  onClose,
-  onReload,
   bodyRef,
+  panelRef,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -800,49 +990,44 @@ function Panel({
   visible: boolean;
   auxiliary: boolean;
   dropping: boolean;
+  selected: boolean;
   mode: Mode;
-  onClose: () => void;
-  onReload: () => void;
   bodyRef: (node: HTMLDivElement | null) => void;
+  panelRef: (node: HTMLElement | null) => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDragLeave: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
 }) {
   return (
     <article
-      className={`panel ${auxiliary ? 'aux' : ''} ${visible ? '' : 'hidden'} ${dropping ? 'drop' : ''}`}
+      className={`panel ${auxiliary ? 'aux' : ''} ${visible ? '' : 'hidden'} ${dropping ? 'drop' : ''} ${
+        selected ? 'selected' : ''
+      }`}
       data-slot={slot}
+      ref={panelRef}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <div className="panel-head">
-        <PanelBadge slot={slot} provider={provider} />
+        <PanelBadge provider={provider} />
         <div className="pv-name">
           <span className="nm">{provider ? provider.name : '空槽位'}</span>
-        </div>
-        <div className="head-actions">
-          <button className="icon-btn act-reload" title="刷新此面板" aria-label="刷新" type="button" onClick={onReload}>
-            <RefreshCw />
-          </button>
-          <button className="icon-btn act-close" title="关闭（保留为空槽位）" aria-label="关闭" type="button" onClick={onClose}>
-            <X />
-          </button>
         </div>
       </div>
 
       <div className="panel-body" ref={bodyRef}>
-        {provider ? <WebPreview slot={slot} provider={provider} state={state} mode={mode} /> : <EmptySlot slot={slot} />}
+        {provider ? <WebPreview slot={slot} provider={provider} state={state} mode={mode} /> : <EmptySlot />}
         <div className="drop-veil">
-          <span className="pill">加载到 {slot}</span>
+          <span className="pill">释放加载</span>
         </div>
       </div>
     </article>
   );
 }
 
-function PanelBadge({ slot, provider }: { slot: SlotId; provider: Provider | null }) {
-  if (!provider) return <div className="slot-badge">{slot}</div>;
+function PanelBadge({ provider }: { provider: Provider | null }) {
+  if (!provider) return <div className="slot-badge empty-mark">+</div>;
   if (provider.iconSm || provider.icon) {
     return (
       <div className="slot-badge img">
@@ -917,6 +1102,7 @@ function UserMessage({ text }: { text: string }) {
 function AiTyping({ provider }: { provider: Provider }) {
   return (
     <div className="msg ai">
+      <ProviderAvatar provider={provider} />
       <div className="role">{provider.name}</div>
       <div className="typing">
         <span className="d" />
@@ -930,6 +1116,7 @@ function AiTyping({ provider }: { provider: Provider }) {
 function AiSkeleton({ provider, compact }: { provider: Provider; compact: boolean }) {
   return (
     <div className="msg ai">
+      <ProviderAvatar provider={provider} />
       <div className="role">{provider.name}</div>
       <div className="body">
         <div className="sk">
@@ -949,14 +1136,23 @@ function AiSkeleton({ provider, compact }: { provider: Provider; compact: boolea
   );
 }
 
-function EmptySlot({ slot }: { slot: SlotId }) {
+function ProviderAvatar({ provider }: { provider: Provider }) {
+  if (provider.iconSm || provider.icon) {
+    return <img className="msg-avatar" src={provider.iconSm ?? provider.icon} alt="" />;
+  }
+  return (
+    <span className={`msg-avatar glyph ${provider.cjk ? 'cjk' : ''}`} style={{ '--g': provider.hue } as React.CSSProperties}>
+      {provider.glyph}
+    </span>
+  );
+}
+
+function EmptySlot() {
   return (
     <div className="empty">
       <div>
-        <div className="ghost">{slot}</div>
         <div className="et">拖入 AI 开始</div>
         <div className="es">从左侧库拖一个 AI 到这里加载</div>
-        <div className="ec">槽位 {slot} 始终保留此位置</div>
       </div>
     </div>
   );

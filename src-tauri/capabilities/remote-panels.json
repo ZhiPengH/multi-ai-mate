@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-panels",
+  "description": "Allows remote AI panel WebViews to report selection and apply their own zoom shortcuts.",
+  "local": false,
+  "remote": {
+    "urls": [
+      "http://*:*",
+      "https://*:*"
+    ]
+  },
+  "webviews": [
+    "ai-panel-*"
+  ],
+  "permissions": [
+    "allow-panel-webview-select",
+    "allow-panel-webview-zoom-shortcut"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "permission": [
+    {
+      "identifier": "allow-panel-webview-create",
+      "description": "Allows the main WebView to create an AI panel WebView.",
+      "commands": {
+        "allow": [
+          "panel_webview_create"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-focus",
+      "description": "Allows the main WebView to focus an AI panel WebView.",
+      "commands": {
+        "allow": [
+          "panel_webview_focus"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-reload",
+      "description": "Allows the main WebView to reload an AI panel WebView.",
+      "commands": {
+        "allow": [
+          "panel_webview_reload"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-select",
+      "description": "Allows an AI panel WebView to report itself as selected.",
+      "commands": {
+        "allow": [
+          "panel_webview_select"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-send",
+      "description": "Allows the main WebView to send text to an AI panel WebView.",
+      "commands": {
+        "allow": [
+          "panel_webview_send"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-zoom-many",
+      "description": "Allows the main WebView to zoom multiple AI panel WebViews.",
+      "commands": {
+        "allow": [
+          "panel_webview_zoom_many"
+        ]
+      }
+    },
+    {
+      "identifier": "allow-panel-webview-zoom-shortcut",
+      "description": "Allows an AI panel WebView to apply its own zoom shortcut.",
+      "commands": {
+        "allow": [
+          "panel_webview_zoom_shortcut"
+        ]
+      }
+    }
+  ]
+}

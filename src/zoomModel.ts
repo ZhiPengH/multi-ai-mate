@@ -1,6 +1,7 @@
 import type { SlotId } from './appModel';
 
 export type ZoomAction = 'in' | 'out' | 'reset';
+export type PrimaryModifier = 'metaKey' | 'ctrlKey';
 
 type ZoomKeyboardEvent = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>;
 
@@ -15,8 +16,11 @@ export function slotFromPanelWebviewLabel(label: string): SlotId | null {
   return match ? (match[1].toUpperCase() as SlotId) : null;
 }
 
-export function zoomActionFromKeyboardEvent(event: ZoomKeyboardEvent): ZoomAction | null {
-  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+export function zoomActionFromKeyboardEvent(
+  event: ZoomKeyboardEvent,
+  primaryModifier: PrimaryModifier,
+): ZoomAction | null {
+  if (!event[primaryModifier] || event.altKey) return null;
   if (event.key === '-') return 'out';
   if (event.key === '=' || event.key === '+') return 'in';
   if (event.key === '0') return 'reset';

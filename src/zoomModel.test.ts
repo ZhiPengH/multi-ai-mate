@@ -17,12 +17,22 @@ const shortcut = (key: string, overrides: Partial<KeyboardEvent> = {}) => ({
 
 describe('zoom model', () => {
   it('parses only supported primary-modifier zoom shortcuts', () => {
-    expect(zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true }))).toBe('out');
-    expect(zoomActionFromKeyboardEvent(shortcut('=', { metaKey: true }))).toBe('in');
-    expect(zoomActionFromKeyboardEvent(shortcut('+', { ctrlKey: true }))).toBe('in');
-    expect(zoomActionFromKeyboardEvent(shortcut('0', { metaKey: true }))).toBe('reset');
-    expect(zoomActionFromKeyboardEvent(shortcut('-', { altKey: true, metaKey: true }))).toBeNull();
-    expect(zoomActionFromKeyboardEvent(shortcut('-'))).toBeNull();
+    expect(zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true }), 'metaKey')).toBe('out');
+    expect(zoomActionFromKeyboardEvent(shortcut('=', { metaKey: true }), 'metaKey')).toBe('in');
+    expect(zoomActionFromKeyboardEvent(shortcut('+', { ctrlKey: true }), 'ctrlKey')).toBe('in');
+    expect(zoomActionFromKeyboardEvent(shortcut('0', { metaKey: true }), 'metaKey')).toBe('reset');
+    expect(
+      zoomActionFromKeyboardEvent(shortcut('-', { altKey: true, metaKey: true }), 'metaKey'),
+    ).toBeNull();
+    expect(zoomActionFromKeyboardEvent(shortcut('-'), 'metaKey')).toBeNull();
+  });
+
+  it('rejects Ctrl as the primary modifier on macOS', () => {
+    expect(zoomActionFromKeyboardEvent(shortcut('-', { ctrlKey: true }), 'metaKey')).toBeNull();
+  });
+
+  it('rejects Meta as the primary modifier on Windows and Linux', () => {
+    expect(zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true }), 'ctrlKey')).toBeNull();
   });
 
   it('targets one valid selection or every open slot in global mode', () => {

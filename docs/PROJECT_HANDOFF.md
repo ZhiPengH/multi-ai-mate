@@ -39,19 +39,23 @@ For Codex or another agent starting a fresh conversation in this repository:
 ## Important Branches And Tags
 
 - Active branch: `codex/newUI`
+- Current local HEAD before this status correction: `b120662` (`docs: update AI webpage zoom handoff`).
+- At `b120662`, local `codex/newUI` is 12 commits ahead of `origin/codex/newUI` and 0 commits behind.
+- The AI webpage zoom implementation and handoff commits have not been pushed.
 - Latest pushed tag: `v0.1.2`
-- Latest relevant commits:
-  - `2fd7b20` - 增加右 Ctrl 快速发送快捷键
-  - `4ac89a3` - Debug，修正，拖拽AI图标，实现加载对应网页。
-  - `7bff7fc` - 新 UI 界面重写
+- Main local zoom commits:
+  - `b120662` - Update the AI webpage zoom handoff.
+  - `4abd47f` - Complete selected and global AI webpage zoom.
+  - `9c8304a` - Serialize panel WebView synchronization.
+  - `d3843ce` - Connect panel WebViews to the zoom controller.
+  - `2f04ed3` - Add the native AI panel zoom controller.
+  - `0ba72d6` - Define AI panel zoom routing tests.
 
 ## Current Local Status
 
-As of this handoff, the only known unrelated local dirty file is:
-
-- `AGENTS.md`
-
-Do not include it in product commits unless the user explicitly asks.
+- `AGENTS.md` is an unrelated pre-existing dirty file. Do not include it in product commits unless the user explicitly asks.
+- `.superpowers/` is untracked and contains this round's task coordination briefs and reports; it is intentionally not committed.
+- At handoff commit `b120662`, local `codex/newUI` is ahead of `origin/codex/newUI` by 12 commits. The zoom implementation and handoff remain local and unpushed.
 
 ## Main Files To Know
 
@@ -183,8 +187,8 @@ The Homebrew Rust on this machine may be older than some current Tauri dependenc
 
 ## Recommended Next Steps
 
-1. Manually test the `release/Multi AI Mate.app`.
-2. Confirm drag/drop loads ChatGPT, Claude, Gemini, and one Chinese provider.
+1. Treat the focused desktop zoom sequence as complete: all 10 required checks passed in `release/Multi AI Mate.app` with ChatGPT and DeepSeek.
+2. Run a broader provider regression covering drag/drop, selection, zoom, and reset with ChatGPT, Claude, Gemini, and one Chinese provider.
 3. Confirm `Right Ctrl + Enter` sends quickly.
 4. Trigger or inspect GitHub Actions for `v0.1.2` to confirm Windows artifacts are generated.
 5. If the UI is accepted, merge `codex/newUI` into the main release branch.

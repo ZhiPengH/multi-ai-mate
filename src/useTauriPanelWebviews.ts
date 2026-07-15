@@ -14,7 +14,8 @@ import {
   closeTrackedPanelWebview,
   createPanelSyncCoordinator,
   createPanelSelectionHandler,
-  reclaimStalePanelWebview,
+  settlePanelSelectionListener,
+  trackAndReclaimStalePanelWebview,
   type PanelSyncCoordinator,
 } from './panelWebviewSync';
 import {
@@ -105,12 +106,16 @@ export function useTauriPanelWebviews({
       (slot) => onPanelSelected?.(slot),
     );
 
-    void listen<string>(PANEL_SELECTED_EVENT, (event) => {
-      if (!disposed) handleSelection(event.payload);
-    }).then((dispose) => {
-      if (disposed) dispose();
-      else unlisten = dispose;
-    });
+    void settlePanelSelectionListener(
+      listen<string>(PANEL_SELECTED_EVENT, (event) => {
+        if (!disposed) handleSelection(event.payload);
+      }),
+      () => disposed,
+      (dispose) => {
+        unlisten = dispose;
+      },
+      (message, error) => console.error(message, error),
+    );
 
     return () => {
       disposed = true;
@@ -171,17 +176,23 @@ export function useTauriPanelWebviews({
         await invoke('panel_webview_create', { label, url, bounds });
         const webview = await Webview.getByLabel(label);
         if (!webview) throw new Error(`Created WebView not found: ${label}`);
-        const staleCleanup = reclaimStalePanelWebview(webview, isCurrent);
+        const entry = {
+          providerId: provider.id,
+          url,
+          webview,
+        };
+        const staleCleanup = trackAndReclaimStalePanelWebview(
+          webviewsRef.current,
+          slot,
+          entry,
+          isCurrent,
+        );
         if (staleCleanup) {
           await staleCleanup;
           return;
         }
 
-        webviewsRef.current.set(slot, {
-          providerId: provider.id,
-          url,
-          webview,
-        });
+        webviewsRef.current.set(slot, entry);
 
         if (suspended) {
           await webview.hide().catch(() => undefined);

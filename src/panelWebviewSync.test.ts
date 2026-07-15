@@ -4,7 +4,8 @@ import {
   closeTrackedPanelWebview,
   createPanelSelectionHandler,
   createPanelSyncCoordinator,
-  reclaimStalePanelWebview,
+  settlePanelSelectionListener,
+  trackAndReclaimStalePanelWebview,
 } from './panelWebviewSync';
 
 type TrackedEntry = {
@@ -109,22 +110,32 @@ describe('panel WebView sync coordination', () => {
     const releaseFirstCreate = deferred<void>();
     const events: string[] = [];
     const registered: string[] = [];
+    const entries = new Map<string, TrackedEntry>();
 
     const firstRun = firstGeneration.run(async () => {
       events.push('first-create-start');
       firstStarted.resolve();
       await releaseFirstCreate.promise;
 
-      const staleWebview = {
-        close: async () => {
-          events.push('stale-close');
+      const staleEntry: TrackedEntry = {
+        webview: {
+          close: async () => {
+            events.push('stale-close');
+          },
+          hide: async () => undefined,
         },
       };
-      const staleCleanup = reclaimStalePanelWebview(staleWebview, firstGeneration.isCurrent);
+      const staleCleanup = trackAndReclaimStalePanelWebview(
+        entries,
+        'A',
+        staleEntry,
+        firstGeneration.isCurrent,
+      );
       if (staleCleanup) {
         await staleCleanup;
         return;
       }
+      entries.set('A', staleEntry);
       registered.push('stale');
     });
 
@@ -145,5 +156,86 @@ describe('panel WebView sync coordination', () => {
 
     expect(events).toEqual(['first-create-start', 'stale-close', 'latest-run']);
     expect(registered).toEqual(['latest']);
+  });
+
+  it('tracks a stale creation so failed cleanup can be retried by the latest sync', async () => {
+    const coordinator = createPanelSyncCoordinator();
+    const firstGeneration = coordinator.beginGeneration();
+    const firstStarted = deferred<void>();
+    const releaseFirstCreate = deferred<void>();
+    const closeError = new Error('stale close failed');
+    const events: string[] = [];
+    const entries = new Map<string, TrackedEntry>();
+    const trackedAtClose: boolean[] = [];
+    let closeCalls = 0;
+    const entry: TrackedEntry = {
+      webview: {
+        close: async () => {
+          closeCalls += 1;
+          trackedAtClose.push(entries.get('A') === entry);
+          events.push(`stale-close-${closeCalls}`);
+          if (closeCalls === 1) throw closeError;
+        },
+        hide: async () => {
+          events.push('stale-hide');
+        },
+      },
+    };
+    const firstRun = firstGeneration.run(async () => {
+      events.push('first-create-start');
+      firstStarted.resolve();
+      await releaseFirstCreate.promise;
+
+      const staleCleanup = trackAndReclaimStalePanelWebview(
+        entries,
+        'A',
+        entry,
+        firstGeneration.isCurrent,
+      );
+      if (staleCleanup) await staleCleanup;
+    });
+
+    await firstStarted.promise;
+    firstGeneration.invalidate();
+
+    const latestGeneration = coordinator.beginGeneration();
+    const latestRun = latestGeneration.run(async () => {
+      events.push('latest-run');
+      const staleEntry = entries.get('A');
+      if (staleEntry) await closeTrackedPanelWebview(entries, 'A', staleEntry);
+    });
+
+    releaseFirstCreate.resolve();
+    const [firstResult, latestResult] = await Promise.allSettled([firstRun, latestRun]);
+
+    expect(firstResult).toEqual({ status: 'rejected', reason: closeError });
+    expect(latestResult).toEqual({ status: 'fulfilled', value: undefined });
+    expect(events).toEqual([
+      'first-create-start',
+      'stale-close-1',
+      'stale-hide',
+      'latest-run',
+      'stale-close-2',
+    ]);
+    expect(trackedAtClose).toEqual([true, true]);
+    expect(entries.has('A')).toBe(false);
+  });
+
+  it('reports panel selection listener registration rejection', async () => {
+    const listenError = new Error('listen failed');
+    const reports: Array<[string, unknown]> = [];
+    let registered = false;
+
+    await settlePanelSelectionListener(
+      Promise.reject(listenError),
+      () => false,
+      () => {
+        registered = true;
+      },
+      (message, error) => reports.push([message, error]),
+    );
+
+    expect(registered).toBe(false);
+    expect(reports).toEqual([['Failed to listen for Tauri panel selection', listenError]]);
   });
 });

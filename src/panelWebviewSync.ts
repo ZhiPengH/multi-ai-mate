@@ -62,6 +62,20 @@ export async function closeTrackedPanelWebview<Key, Entry extends TrackedPanelWe
   if (entries.get(key) === entry) entries.delete(key);
 }
 
+export function trackAndReclaimStalePanelWebview<
+  Key,
+  Entry extends TrackedPanelWebviewEntry,
+>(
+  entries: Map<Key, Entry>,
+  key: Key,
+  entry: Entry,
+  isCurrent: () => boolean,
+): Promise<void> | null {
+  if (isCurrent()) return null;
+  entries.set(key, entry);
+  return closeTrackedPanelWebview(entries, key, entry);
+}
+
 export function createPanelSelectionHandler(
   latestOpenSlots: () => readonly SlotId[],
   onPanelSelected: (slot: SlotId) => void,
@@ -72,10 +86,17 @@ export function createPanelSelectionHandler(
   };
 }
 
-export function reclaimStalePanelWebview(
-  webview: ClosablePanelWebview,
-  isCurrent: () => boolean,
-): Promise<void> | null {
-  if (isCurrent()) return null;
-  return webview.close().then(() => undefined);
+export async function settlePanelSelectionListener(
+  registration: Promise<() => void>,
+  isDisposed: () => boolean,
+  onRegistered: (unlisten: () => void) => void,
+  reportError: (message: string, error: unknown) => void,
+): Promise<void> {
+  try {
+    const unlisten = await registration;
+    if (isDisposed()) unlisten();
+    else onRegistered(unlisten);
+  } catch (error) {
+    reportError('Failed to listen for Tauri panel selection', error);
+  }
 }

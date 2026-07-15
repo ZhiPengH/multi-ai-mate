@@ -35,6 +35,18 @@ describe('zoom model', () => {
     expect(zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true }), 'ctrlKey')).toBeNull();
   });
 
+  it('rejects Ctrl alongside Command on macOS', () => {
+    expect(
+      zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true, ctrlKey: true }), 'metaKey'),
+    ).toBeNull();
+  });
+
+  it('rejects Meta alongside Ctrl on Windows and Linux', () => {
+    expect(
+      zoomActionFromKeyboardEvent(shortcut('-', { metaKey: true, ctrlKey: true }), 'ctrlKey'),
+    ).toBeNull();
+  });
+
   it('targets one valid selection or every open slot in global mode', () => {
     expect(zoomTargetSlots('B', ['A', 'B'])).toEqual(['B']);
     expect(zoomTargetSlots(null, ['A', 'B'])).toEqual(['A', 'B']);

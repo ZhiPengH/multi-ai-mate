@@ -20,7 +20,8 @@ export function zoomActionFromKeyboardEvent(
   event: ZoomKeyboardEvent,
   primaryModifier: PrimaryModifier,
 ): ZoomAction | null {
-  if (!event[primaryModifier] || event.altKey) return null;
+  const otherPrimaryModifier = primaryModifier === 'metaKey' ? 'ctrlKey' : 'metaKey';
+  if (!event[primaryModifier] || event[otherPrimaryModifier] || event.altKey) return null;
   if (event.key === '-') return 'out';
   if (event.key === '=' || event.key === '+') return 'in';
   if (event.key === '0') return 'reset';

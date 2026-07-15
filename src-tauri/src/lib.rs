@@ -1,3 +1,5 @@
+mod panel_zoom;
+
 use tauri::Manager;
 use std::sync::mpsc;
 use std::time::Duration;
